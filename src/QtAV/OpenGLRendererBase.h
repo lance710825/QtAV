@@ -48,6 +48,9 @@ public:
     virtual ~OpenGLRendererBase();
     bool isSupported(VideoFormat::PixelFormat pixfmt) const Q_DECL_OVERRIDE;
     OpenGLVideo* opengl() const Q_DECL_OVERRIDE;
+    QMatrix4x4 matrix4x4();
+    void setMatrix4x4(const QMatrix4x4 &matrix4x4);
+    virtual void matrixIdentity() {}
 protected:
     virtual bool receiveFrame(const VideoFrame& frame) Q_DECL_OVERRIDE;
     //called in paintEvent before drawFrame() when required

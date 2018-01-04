@@ -86,4 +86,10 @@ void OpenGLWidgetRenderer::showEvent(QShowEvent *e)
     onShowEvent(); // TODO: onShowEvent(w, h)?
     resizeGL(width(), height());
 }
+
+void OpenGLWidgetRenderer::matrixIdentity()
+{
+    emit matrixIdentitied();
+}
+
 } //namespace QtAV

@@ -44,6 +44,8 @@ namespace QtAV {
 
 typedef int VideoRendererId;
 extern Q_AV_EXPORT VideoRendererId VideoRendererId_OpenGLWindow;
+class LibAVFilterVideo;
+class VideoFilterContext;
 class Filter;
 class OpenGLVideo;
 class VideoFormat;
@@ -204,6 +206,9 @@ public:
      * Currently you can only use it to set custom shader OpenGLVideo.setUserShader()
      */
     virtual OpenGLVideo* opengl() const { return NULL;}
+    void initAVFilter();
+    void setFilterEnabled(bool enabled = false);
+    void setFilterOptions(const QString &filters);
 protected:
     VideoRenderer(VideoRendererPrivate &d);
     //TODO: batch drawBackground(color, region)=>loop drawBackground(color,rect)
@@ -268,6 +273,9 @@ private:
     //the size of decoded frame. get called in receiveFrame(). internal use only
     void setInSize(const QSize& s);
     void setInSize(int width, int height);
+
+    LibAVFilterVideo *m_videoFilter;
+    VideoFilterContext *m_filterContext;
 };
 
 } //namespace QtAV

@@ -182,6 +182,10 @@ void QPainterFilterContext::drawPlainText(const QPointF &pos, const QString &tex
 {
     if (!prepare())
         return;
+    if (text.trimmed().isEmpty()) {
+        painter->restore();
+        return;
+    }
     QFontMetrics fm(font);
     painter->drawText(pos + QPoint(0, fm.ascent()), text);
     painter->restore();
@@ -191,6 +195,10 @@ void QPainterFilterContext::drawPlainText(const QRectF &rect, int flags, const Q
 {
     if (!prepare())
         return;
+    if (text.trimmed().isEmpty()) {
+        painter->restore();
+        return;
+    }
     if (rect.isNull())
         painter->drawText(rect.topLeft(), text);
     else

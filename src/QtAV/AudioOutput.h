@@ -209,6 +209,7 @@ Q_SIGNALS:
     void muteChanged(bool);
     void deviceFeaturesChanged();
     void backendsChanged();
+    void deliverAudioFrame(const QtAV::AudioFrame &frame);
 protected:
     // Store and fill data to audio buffers
     bool receiveData(const QByteArray &data, qreal pts = 0.0);

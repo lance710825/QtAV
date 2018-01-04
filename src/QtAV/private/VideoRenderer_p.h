@@ -80,9 +80,9 @@ public:
         }
         // dar: displayed aspect ratio in video renderer orientation
         int rotate = orientation;
-        if (statistics) {
-            rotate += int(statistics->video_only.rotate);
-        }
+        //if (statistics) {
+        //    rotate += int(statistics->video_only.rotate);
+        //}
         const qreal dar = (rotate % 180) ? 1.0/outAspectRatio : outAspectRatio;
         //qDebug("out rect: %f %dx%d ==>", out_aspect_ratio, out_rect.width(), out_rect.height());
         if (rendererAspectRatio >= dar) { //equals to original video aspect ratio here, also equals to out ratio
@@ -102,9 +102,9 @@ public:
     }
     virtual void setupQuality() {}
     int rotation() const {
-        if (!statistics)
+        //if (!statistics)
             return orientation;
-        return statistics->video_only.rotate + orientation;
+        //return statistics->video_only.rotate + orientation;
     }
 
     //draw background when necessary, for example, renderer is resized. Then set to false

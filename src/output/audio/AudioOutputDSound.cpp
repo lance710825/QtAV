@@ -191,8 +191,10 @@ error:
 bool AudioOutputDSound::close()
 {
     available = false;
+    watcher.wait();
     destroy();
     CloseHandle(notify_event); // FIXME: is it ok if thread is still waiting?
+    notify_event = 0;
     return true;
 }
 

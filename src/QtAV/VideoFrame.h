@@ -29,6 +29,7 @@
 namespace QtAV {
 
 /// metadata: pallete for pal8
+class Statistics;
 class VideoFramePrivate;
 class Q_AV_EXPORT VideoFrame : public Frame
 {
@@ -125,6 +126,7 @@ public:
      * \return null on error. otherwise return the input handle
      */
     void* createInteropHandle(void* handle, SurfaceType type, int plane);
+    Statistics *statistics;
 };
 
 class ImageConverter;

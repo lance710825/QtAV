@@ -368,8 +368,10 @@ void AudioThread::run()
             pkt.pts += chunk_delay; // packet not fully decoded, use new pts in the next decoding
             pkt.dts += chunk_delay;
         }
-        if (has_ao)
+        if (has_ao && ao->isOpen()) {
+            ao->deliverAudioFrame(frame);
             emit frameDelivered();
+        }
         d.last_pts = d.clock->value(); //not pkt.pts! the delay is updated!
     }
     d.packets.clear();

@@ -243,6 +243,9 @@ void  PlayerSubtitle::updateInternalSubtitleTracks(const QVariantList &tracks)
 void PlayerSubtitle::processInternalSubtitlePacket(int track, const QtAV::Packet &packet)
 {
     m_sub->processLine(packet.data, packet.pts, packet.duration);
+    if (m_current_pkt.size() <= track) {
+        m_current_pkt.resize(track + 1);
+    }
     m_current_pkt[track] = packet;
 }
 

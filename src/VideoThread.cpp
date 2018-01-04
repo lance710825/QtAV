@@ -230,6 +230,7 @@ bool VideoThread::deliverVideoFrame(VideoFrame &frame)
         }
         frame = outFrame;
     }
+    frame.statistics = d.statistics;
     d.outputSet->sendVideoFrame(frame); //TODO: group by format, convert group by group
     d.outputSet->unlock();
 

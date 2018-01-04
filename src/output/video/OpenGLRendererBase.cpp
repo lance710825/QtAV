@@ -74,6 +74,19 @@ OpenGLVideo* OpenGLRendererBase::opengl() const
     return const_cast<OpenGLVideo*>(&d_func().glv);
 }
 
+QMatrix4x4 OpenGLRendererBase::matrix4x4()
+{
+    DPTR_D(OpenGLRendererBase);
+    return d.matrix;
+}
+
+void OpenGLRendererBase::setMatrix4x4(const QMatrix4x4 &matrix4x4)
+{
+    DPTR_D(OpenGLRendererBase);
+    d.matrix = matrix4x4;
+    updateUi();
+}
+
 bool OpenGLRendererBase::receiveFrame(const VideoFrame& frame)
 {
     DPTR_D(OpenGLRendererBase);
@@ -135,6 +148,7 @@ void OpenGLRendererBase::onResizeGL(int w, int h)
     DPTR_D(OpenGLRendererBase);
     d.glv.setProjectionMatrixToRect(QRectF(0, 0, w, h));
     d.setupAspectRatio();
+    matrixIdentity();
 }
 
 void OpenGLRendererBase::onResizeEvent(int w, int h)
@@ -143,6 +157,7 @@ void OpenGLRendererBase::onResizeEvent(int w, int h)
     d.update_background = true;
     resizeRenderer(w, h);
     d.setupAspectRatio();
+    matrixIdentity();
     //QOpenGLWindow::resizeEvent(e); //will call resizeGL(). TODO:will call paintEvent()?
 }
 //TODO: out_rect not correct when top level changed
@@ -162,6 +177,7 @@ void OpenGLRendererBase::onSetOutAspectRatio(qreal ratio)
     Q_UNUSED(ratio);
     DPTR_D(OpenGLRendererBase);
     d.setupAspectRatio();
+    matrixIdentity();
 }
 
 void OpenGLRendererBase::onSetOutAspectRatioMode(OutAspectRatioMode mode)
@@ -169,12 +185,14 @@ void OpenGLRendererBase::onSetOutAspectRatioMode(OutAspectRatioMode mode)
     Q_UNUSED(mode);
     DPTR_D(OpenGLRendererBase);
     d.setupAspectRatio();
+    matrixIdentity();
 }
 
 bool OpenGLRendererBase::onSetOrientation(int value)
 {
     Q_UNUSED(value)
     d_func().setupAspectRatio();
+    matrixIdentity();
     return true;
 }
 

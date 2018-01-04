@@ -28,6 +28,8 @@
 #include "QtAV/private/factory.h"
 #include "QtAV/private/mkid.h"
 #include "utils/Logger.h"
+#include "LibAVFilter.h"
+#include "FilterContext.h"
 
 namespace QtAV {
 FACTORY_DEFINE(VideoRenderer)
@@ -35,17 +37,51 @@ VideoRendererId VideoRendererId_OpenGLWindow = mkid::id32base36_6<'Q', 'O', 'G',
 
 VideoRenderer::VideoRenderer()
     :AVOutput(*new VideoRendererPrivate)
+    ,m_videoFilter(NULL)
 {
     // can not do 'if (widget()) connect to update()' because widget() is virtual
+    initAVFilter();
 }
 
 VideoRenderer::VideoRenderer(VideoRendererPrivate &d)
     :AVOutput(d)
+    ,m_videoFilter(NULL)
 {
+    initAVFilter();
 }
 
 VideoRenderer::~VideoRenderer()
 {
+    if (m_videoFilter != NULL) {
+        delete m_videoFilter;
+        m_videoFilter = NULL;
+    }
+}
+
+void VideoRenderer::initAVFilter()
+{
+    if (m_videoFilter != NULL) {
+        delete m_videoFilter;
+        m_videoFilter = NULL;
+    }
+    m_videoFilter = new LibAVFilterVideo();
+    m_filterContext = VideoFilterContext::create(VideoFilterContext::QtPainter);
+    m_videoFilter->setEnabled(false);
+}
+
+void VideoRenderer::setFilterEnabled(bool enabled)
+{
+    m_videoFilter->setEnabled(enabled);
+}
+
+void VideoRenderer::setFilterOptions(const QString &filters)
+{
+    /*!
+    * set the filter options: such as "edgedetect","hfilp","negate",
+    * "split[mian][tmp];[tmp]crop=iw:ih/2:0:0,vflip[flip];[mian][flip]overlay=0:H/2" etc.
+    * 2017-06-26 lance++
+    */
+    m_videoFilter->setOptions(filters);
 }
 
 bool VideoRenderer::receive(const VideoFrame &frame)
@@ -56,9 +92,13 @@ bool VideoRenderer::receive(const VideoFrame &frame)
     if (dar_old != d.source_aspect_ratio)
         sourceAspectRatioChanged(d.source_aspect_ratio);
     setInSize(frame.width(), frame.height());
+    VideoFrame tempframe = frame.clone();
+    if (m_videoFilter->isEnabled() && m_videoFilter->prepareContext(m_filterContext, tempframe.statistics, &tempframe)) {
+        m_videoFilter->apply(frame.statistics, &tempframe);
+    }
     QMutexLocker locker(&d.img_mutex);
     Q_UNUSED(locker); //TODO: double buffer for display/dec frame to avoid mutex
-    return receiveFrame(frame);
+    return receiveFrame(tempframe);
 }
 
 bool VideoRenderer::setPreferredPixelFormat(VideoFormat::PixelFormat pixfmt)
