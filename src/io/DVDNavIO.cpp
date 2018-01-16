@@ -195,13 +195,13 @@ public:
     }
     ~DVDNavIOPrivate()
     {
-        stream_dvdnav_close(dvd_stream);
+        stream_dvdnav_close();
     }
     int  stream_dvdnav_open(const char *filename);
     int  stream_dvdnav_read(stream_t *s, char *but, int len);
     bool stream_dvdnav_seek(stream_t *s, int64_t newpos);
     int  stream_dvdnav_control(stream_t *stream, int cmd, void* arg);
-    void stream_dvdnav_close(stream_t *s);
+    void stream_dvdnav_close();
     int64_t update_current_time();
 
 public:
@@ -231,8 +231,6 @@ private:
     void update_title_len(stream_t *stream);
     int  dvdtimetomsec(dvd_time_t *dt);
     void show_audio_subs_languages(dvdnav_t *nav);
-    void identify_chapters(dvdnav_t *nav, uint32_t title);
-    void identify(dvdnav_priv_t *priv, struct stream_nav_priv_s *p);
     int  dvdnav_lang_from_aid(int aid);
     int  dvdnav_lang_from_sid(int sid);
 };
@@ -257,7 +255,7 @@ qint64 DVDNavIO::read(char *data, qint64 maxSize)
 
     Q_UNUSED(maxSize)
     if (!d.dvd_stream)
-        return 0;
+        return AVERROR_EOF;
     int len = 0;
 
     len = d.stream_dvdnav_read(d.dvd_stream, data, STREAM_BUFFER_SIZE);
@@ -495,38 +493,6 @@ void DVDNavIOPrivate::show_audio_subs_languages(dvdnav_t *nav)
     }
 }
 
-void DVDNavIOPrivate::identify_chapters(dvdnav_t *nav, uint32_t title)
-{
-    uint64_t *parts=NULL, duration=0;
-    uint32_t n, i, t;
-    n = dvdnav_describe_title_chapters(nav, title, &parts, &duration);
-    if(parts) {
-        t = duration / 90;
-        qDebug("ID_DVD_TITLE_%d_LENGTH=%d.%03d\n", title, t / 1000, t % 1000);
-        qDebug("ID_DVD_TITLE_%d_CHAPTERS=%d\n", title, n);
-        qDebug("TITLE %u, CHAPTERS: ", title);
-
-        for(i=0; i<n; i++) {
-            t = parts[i] /  90000;
-            qDebug("%02d:%02d:%02d,", t/3600, (t/60)%60, t%60);
-        }
-//        free(parts);  //TODO
-        qDebug("\n");
-    }
-}
-
-void DVDNavIOPrivate::identify(dvdnav_priv_t *priv, struct stream_nav_priv_s *p)
-{
-    int32_t titles=0, i;
-
-    if(current_title <= 0) {
-        dvdnav_get_number_of_titles(priv->dvdnav, &titles);
-        for(i=1; i<=titles; i++)
-            identify_chapters(priv->dvdnav, i);
-    }
-    else
-        identify_chapters(priv->dvdnav, current_title);
-}
 /**
  * \brief mp_dvdnav_lang_from_aid() returns the language corresponding to audio id 'aid'
  * \param stream: - stream pointer
@@ -1105,7 +1071,7 @@ int DVDNavIOPrivate::dvdnav_first_play()
 //        if (parts.isEmpty()) {
             if (dvdnav_title_play(priv->dvdnav, current_title) != DVDNAV_STATUS_OK) {
                 qDebug("dvdnav_stream, couldn't select title %d, error '%s'\n", current_title, dvdnav_err_to_string(priv->dvdnav));
-                stream_dvdnav_close(dvd_stream);
+                stream_dvdnav_close();
                 dvd_stream = NULL;
                 return STREAM_UNSUPPORTED;
             }
@@ -1169,8 +1135,10 @@ int DVDNavIOPrivate::stream_dvdnav_open(const char *filename)
         return STREAM_UNSUPPORTED;
 
     if (dvdnav_open(&(priv->dvdnav), filename) != DVDNAV_STATUS_OK || !priv->dvdnav) {
-        free(dvd_stream);
-        free(priv);
+        delete dvd_stream;
+        dvd_stream = NULL;
+        delete priv;
+        priv = NULL;
         return STREAM_UNSUPPORTED;
     }
     if (1) {	//from vlc: if not used dvdnav from cvs will fail
@@ -1198,7 +1166,6 @@ int DVDNavIOPrivate::stream_dvdnav_open(const char *filename)
         return STREAM_UNSUPPORTED;
     }
 
-    identify(priv, p);
     if(current_title > 0)
         show_audio_subs_languages(priv->dvdnav);
     if(dvd_angle > 1)
@@ -1224,14 +1191,16 @@ int DVDNavIOPrivate::stream_dvdnav_open(const char *filename)
     return STREAM_OK;
 }
 
-void DVDNavIOPrivate::stream_dvdnav_close(stream_t *s)
+void DVDNavIOPrivate::stream_dvdnav_close()
 {
-    if (s) {
-        free(s);
+    if (dvd_stream) {
+        delete dvd_stream;
+        dvd_stream = NULL;
     }
     if (priv) {
         if (priv->dvdnav) dvdnav_close(priv->dvdnav);
-        free(priv);
+        delete priv;
+        priv = NULL;
     }
 }
 
