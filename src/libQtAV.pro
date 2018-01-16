@@ -480,6 +480,7 @@ SOURCES += \
     VideoFrame.cpp \
     io/MediaIO.cpp \
     io/QIODeviceIO.cpp \
+    io/DVDNavIO.cpp \
     output/audio/AudioOutput.cpp \
     output/audio/AudioOutputBackend.cpp \
     output/audio/AudioOutputNull.cpp \

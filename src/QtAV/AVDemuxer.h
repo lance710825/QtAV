@@ -63,7 +63,7 @@ public:
      * \brief setMedia
      * \return whether the media source is changed
      */
-    bool setMedia(const QString& fileName);
+    bool setMedia(const QString& fileName, qint64 duration = 0);
     bool setMedia(QIODevice* dev);
     bool setMedia(MediaIO* in);
     /*!
@@ -76,6 +76,8 @@ public:
      */
     void setFormat(const QString& fmt);
     QString formatForced() const;
+    void setCustomDuration(int64_t duration);
+    int64_t customDuration();
     bool load();
     bool unload();
     bool isLoaded() const;
@@ -187,6 +189,7 @@ public:
      */
     void setOptions(const QVariantHash &dict);
     QVariantHash options() const;
+    qint64 clock();
 Q_SIGNALS:
     void unloaded();
     void userInterrupted(); //NO direct connection because it's emit before interrupted happens

@@ -155,6 +155,7 @@ public:
     AVPlayer::State state;
     MediaEndAction end_action;
     QMutex load_mutex;
+    int64_t custom_duration;
 };
 
 } //namespace QtAV

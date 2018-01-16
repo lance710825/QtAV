@@ -140,6 +140,8 @@ public:
     //struct AVIOContext; //anonymous struct in FFmpeg1.0.x
     void* avioContext(); //const?
     void release(); //TODO: how to remove it?
+    virtual qint64 clock() {return 0;}
+    virtual void setDuration(qint64 duration/*us*/) {Q_UNUSED(duration)}
 public:
     static void registerAll();
     template<class C> static bool Register(MediaIOId id, const char* name) { return Register(id, create<C>, name);}

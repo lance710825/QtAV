@@ -559,6 +559,12 @@ VideoCapture* AVPlayer::videoCapture() const
     return d->vcapture;
 }
 
+void AVPlayer::play(const QString &path, qint64 duration)
+{
+    d->custom_duration = duration;
+    play(path);
+}
+
 void AVPlayer::play(const QString& path)
 {
     setFile(path);
@@ -654,7 +660,7 @@ void AVPlayer::loadInternal()
     }
     qDebug() << "Loading " << d->current_source << " ...";
     if (d->current_source.type() == QVariant::String) {
-        d->demuxer.setMedia(d->current_source.toString());
+        d->demuxer.setMedia(d->current_source.toString(), d->custom_duration);
     } else {
         if (d->current_source.canConvert<QIODevice*>()) {
             d->demuxer.setMedia(d->current_source.value<QIODevice*>());
@@ -842,7 +848,12 @@ bool AVPlayer::isSeekable() const
 qint64 AVPlayer::position() const
 {
     // TODO: videoTime()?
-    const qint64 pts = d->clock->value()*1000.0;
+    qint64 pts = 0;
+    if (d->custom_duration > 0) {
+        pts = d->demuxer.clock() * 1000;
+    } else {
+        pts = d->clock->value()*1000.0;
+    }
     if (relativeTimeMode())
         return pts - absoluteMediaStartPosition();
     return pts;
@@ -1371,6 +1382,9 @@ void AVPlayer::updateMediaStatus(QtAV::MediaStatus status)
 void AVPlayer::onSeekFinished(qint64 value)
 {
     d->seeking = false;
+    if (d->custom_duration > 0) {
+        value = d->demuxer.clock() * 1000;
+    }
     Q_EMIT seekFinished(value);
     //d->clock->updateValue(value/1000.0);
     if (relativeTimeMode())

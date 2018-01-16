@@ -182,6 +182,9 @@ typename Factory<Id, T, Class>::ID Factory<Id, T, Class>::id(const char* name, b
             }
         }
     }
+#ifdef _MSC_VER
+#undef strcasecmp
+#endif
     DBG("Not found\n");
     return ID(); //can not return ref. TODO: Use a ID wrapper class
 }

@@ -33,6 +33,7 @@ FACTORY_DEFINE(MediaIO)
 extern bool RegisterMediaIOQIODevice_Man();
 extern bool RegisterMediaIOQFile_Man();
 extern bool RegisterMediaIOWinRT_Man();
+extern bool RegisterMediaIODVDNav_Man();
 void MediaIO::registerAll()
 {
     static bool done = false;
@@ -44,6 +45,7 @@ void MediaIO::registerAll()
 #ifdef Q_OS_WINRT
     RegisterMediaIOWinRT_Man();
 #endif
+    RegisterMediaIODVDNav_Man();
 }
 
 QStringList MediaIO::builtInNames()

@@ -211,6 +211,7 @@ public:
         , seek_type(AccurateSeek)
         , dict(0)
         , interrupt_hanlder(0)
+        , custom_duration(0)
     {}
     ~Private() {
         delete interrupt_hanlder;
@@ -316,6 +317,7 @@ public:
 
     AVDemuxer::InterruptHandler *interrupt_hanlder;
     QMutex mutex; //TODO: remove if load, read, seek is called in 1 thread
+    int64_t custom_duration;
 };
 
 AVDemuxer::AVDemuxer(QObject *parent)
@@ -581,14 +583,21 @@ bool AVDemuxer::seek(qint64 pos)
     }
     //qDebug("seek flag: %d", seek_flag);
     //bool seek_bytes = !!(d->format_ctx->iformat->flags & AVFMT_TS_DISCONT) && strcmp("ogg", d->format_ctx->iformat->name);
-    int ret = av_seek_frame(d->format_ctx, -1, upos, seek_flag);
-    //int ret = avformat_seek_file(d->format_ctx, -1, INT64_MIN, upos, upos, seek_flag);
-    //avformat_seek_file()
-    if (ret < 0 && (seek_flag & AVSEEK_FLAG_BACKWARD)) {
-        // seek to 0?
-        qDebug("av_seek_frame error with flag AVSEEK_FLAG_BACKWARD: %s. try to seek without the flag", av_err2str(ret));
-        seek_flag &= ~AVSEEK_FLAG_BACKWARD;
+    int ret = 0;
+    if (d->custom_duration > 0 && mediaIO()) {
+        ret = mediaIO()->seek(pos, -200);
+        avformat_flush(d->format_ctx);
+    }
+    else {
         ret = av_seek_frame(d->format_ctx, -1, upos, seek_flag);
+        //int ret = avformat_seek_file(d->format_ctx, -1, INT64_MIN, upos, upos, seek_flag);
+        //avformat_seek_file()
+        if (ret < 0 && (seek_flag & AVSEEK_FLAG_BACKWARD)) {
+            // seek to 0?
+            qDebug("av_seek_frame error with flag AVSEEK_FLAG_BACKWARD: %s. try to seek without the flag", av_err2str(ret));
+            seek_flag &= ~AVSEEK_FLAG_BACKWARD;
+            ret = av_seek_frame(d->format_ctx, -1, upos, seek_flag);
+        }
     }
     //qDebug("av_seek_frame ret: %d", ret);
 #endif
@@ -640,7 +649,7 @@ MediaIO* AVDemuxer::mediaIO() const
     return d->input;
 }
 
-bool AVDemuxer::setMedia(const QString &fileName)
+bool AVDemuxer::setMedia(const QString &fileName, qint64 duration)
 {
     if (d->input) {
         delete d->input;
@@ -677,6 +686,7 @@ bool AVDemuxer::setMedia(const QString &fileName)
         // supportedProtocols() is not complete. so try MediaIO 1st, if not found, fallback to libavformat
         d->input = MediaIO::createForProtocol(scheme);
         if (d->input) {
+            setCustomDuration(duration);
             d->input->setUrl(d->file);
         }
     }
@@ -729,6 +739,19 @@ void AVDemuxer::setFormat(const QString &fmt)
 QString AVDemuxer::formatForced() const
 {
     return d->format_forced;
+}
+
+void AVDemuxer::setCustomDuration(int64_t duration)
+{
+    d->custom_duration = duration;
+    if (d->input) {
+        d->input->setDuration(duration);
+    }
+}
+
+int64_t QtAV::AVDemuxer::customDuration()
+{
+    return d->custom_duration;
 }
 
 bool AVDemuxer::load()
@@ -813,6 +836,9 @@ bool AVDemuxer::load()
     ret = avformat_find_stream_info(d->format_ctx, NULL);
     d->interrupt_hanlder->end();
 
+    if (d->custom_duration > 0) {
+        d->format_ctx->duration = d->custom_duration;
+    }
     if (ret < 0) {
         setMediaStatus(InvalidMedia);
         AVError::ErrorCode ec(AVError::ParseStreamError);
@@ -1134,6 +1160,11 @@ void AVDemuxer::setOptions(const QVariantHash &dict)
 QVariantHash AVDemuxer::options() const
 {
     return d->options;
+}
+
+qint64 AVDemuxer::clock()
+{
+    return d->input->clock();
 }
 
 void AVDemuxer::setMediaStatus(MediaStatus status)
