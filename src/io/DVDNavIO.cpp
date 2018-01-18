@@ -655,15 +655,13 @@ int DVDNavIOPrivate::dvdnav_stream_read(dvdnav_priv_t * priv, unsigned char *buf
 {
     int event = DVDNAV_NOP;
 
-    *len=-1;
     if (dvdnav_get_next_block(priv->dvdnav, buf, &event, len) != DVDNAV_STATUS_OK) {
         if (dvdnav_sector_search(priv->dvdnav, 1, SEEK_CUR) == DVDNAV_STATUS_ERR) {
             qDebug("sector search error : %s\n", dvdnav_err_to_string(priv->dvdnav));
+            *len = 0;
         }
-        qDebug("Error getting next block from DVD %d (%s)\n",event, dvdnav_err_to_string(priv->dvdnav) );
-        *len=-1;
     }
-    else if (event != DVDNAV_BLOCK_OK && event != DVDNAV_NAV_PACKET) {
+    if (event != DVDNAV_BLOCK_OK) {
         *len = 0;
     }
     return event;
@@ -689,8 +687,9 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
             qDebug("DVDNAV stream read error!\n");
             return 0;
         }
-        if (event != DVDNAV_BLOCK_OK)
+        if (event != DVDNAV_BLOCK_OK) {
             dvdnav_get_highlight(priv, 1);
+        }
         switch (event) {
         case DVDNAV_STILL_FRAME: {
             dvdnav_still_event_t *still_event = (dvdnav_still_event_t *)buf;
@@ -716,8 +715,9 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
             priv->state |= NAV_FLAG_EOF;
             return len;
         }
-        case DVDNAV_BLOCK_OK:
         case DVDNAV_NAV_PACKET:
+            break;
+        case DVDNAV_BLOCK_OK:
             return len;
         case DVDNAV_WAIT: {
             if ((priv->state & NAV_FLAG_WAIT_SKIP) &&
@@ -1112,7 +1112,6 @@ int64_t DVDNavIOPrivate::update_current_time()
 {
     int64_t time = dvdnav_get_current_time(priv->dvdnav) / 90000.0f;
     if (time != current_time) {
-        qDebug() << "currentTime: " << time;
         current_time = time;
     }
     return current_time;
