@@ -187,6 +187,24 @@ void SubtitleFilter::process(Statistics *statistics, VideoFrame *frame)
         QImage img = d.player_sub->subtitle()->getImage(context()->paint_device->width(), context()->paint_device->height(), &rect);
         if (img.isNull())
             return;
+        //scale the image
+        QPoint pos = QPoint(rect.x(), rect.y()); QSize size = rect.size();
+        int video_frame_width = d.player_sub->subtitle()->statistics().video_only.width;
+        int video_frame_height = d.player_sub->subtitle()->statistics().video_only.height;
+        int video_render_width = context()->paint_device->width();
+        int video_render_height = context()->paint_device->height();
+        if (context()->paint_device->height() > 0) {
+            float ratioW = video_frame_width * 1.0 / video_render_width;
+            float ratioH = video_frame_height * 1.0 / video_render_height;
+            if (ratioW > 0) {
+                pos.setX(pos.x() / ratioW);
+            }
+            if (ratioH > 0) {
+                pos.setY(pos.y() / ratioH);
+                img = img.scaled(img.width() / ratioH, img.height() / ratioH);
+            }
+            rect = QRect(pos, img.size());
+        }
         context()->drawImage(rect, img);
         return;
     }

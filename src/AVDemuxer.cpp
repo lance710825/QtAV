@@ -474,6 +474,28 @@ bool AVDemuxer::readFrame()
         d->started = true;
         Q_EMIT started();
     }
+    // for DVD's Picture-based subtitles, this subtitle will be parsed a few seconds later.
+    if (d->stream >= (videoStreams().count() + audioStreams().count() + subtitleStreams().count())) {
+        if (d->stream >= 0 && d->stream < d->format_ctx->nb_streams) {
+            AVMediaType type = d->format_ctx->streams[d->stream]->codec->codec_type;
+            if (type == AVMEDIA_TYPE_VIDEO) {
+                d->video_streams.push_back(d->stream);
+                Q_EMIT newStreamFound(VideoStream, d->stream);
+            }
+            else if (type == AVMEDIA_TYPE_AUDIO) {
+                d->audio_streams.push_back(d->stream);
+                Q_EMIT newStreamFound(AudioStream, d->stream);
+            }
+            else if (type == AVMEDIA_TYPE_SUBTITLE) {
+                d->subtitle_streams.push_back(d->stream);
+                qSort(d->subtitle_streams.begin(), d->subtitle_streams.end(), [this](const int &a, const int &b) {
+                    return d->format_ctx->streams[a]->id < d->format_ctx->streams[b]->id;
+                });
+                Q_EMIT newStreamFound(SubtitleStream, d->stream);
+            }
+        }
+        //d->setStream(AVDemuxer::SubtitleStream, d->stream);
+    }
     if (d->stream != videoStream() && d->stream != audioStream() && d->stream != subtitleStream()) {
         //qWarning("[AVDemuxer] unknown stream index: %d", stream);
         av_packet_unref(&packet); //important!
@@ -686,7 +708,8 @@ bool AVDemuxer::setMedia(const QString &fileName, qint64 duration)
         // supportedProtocols() is not complete. so try MediaIO 1st, if not found, fallback to libavformat
         d->input = MediaIO::createForProtocol(scheme);
         if (d->input) {
-            setCustomDuration(duration);
+            if (duration > 0)
+                setCustomDuration(duration);
             d->input->setUrl(d->file);
         }
     }
@@ -789,8 +812,8 @@ bool AVDemuxer::load()
     //alloc av format context
     if (!d->format_ctx)
         d->format_ctx = avformat_alloc_context();
-    if (d->custom_duration <= 0)
-        d->format_ctx->flags |= AVFMT_FLAG_GENPTS;
+    //Will lead to subtitles flashing if not use AVFMT_FLAG_GENPTS.
+    d->format_ctx->flags |= AVFMT_FLAG_GENPTS;
     //install interrupt callback
     d->format_ctx->interrupt_callback = *d->interrupt_hanlder;
 
@@ -837,7 +860,8 @@ bool AVDemuxer::load()
     ret = avformat_find_stream_info(d->format_ctx, NULL);
     d->interrupt_hanlder->end();
 
-    if (d->custom_duration > 0) {
+    if (d->input && d->input->duration() > 0) {
+        d->custom_duration = d->input->duration();
         d->format_ctx->duration = d->custom_duration;
     }
     if (ret < 0) {
@@ -893,6 +917,7 @@ bool AVDemuxer::unload()
     d->max_pts = 0.0;
     d->resetStreams();
     d->interrupt_hanlder->setStatus(0);
+    d->custom_duration = 0;
     //av_close_input_file(d->format_ctx); //deprecated
     if (d->format_ctx) {
         qDebug("closing d->format_ctx");
@@ -987,6 +1012,9 @@ qint64 AVDemuxer::duration() const
 qint64 AVDemuxer::startTimeUs() const
 {
     // start time may be not null for network stream
+    if (d->input) {
+        return d->input->startTimeUs();
+    }
     if (!d->format_ctx || d->format_ctx->start_time == AV_NOPTS_VALUE)
         return 0;
     return d->format_ctx->start_time;
@@ -1165,7 +1193,10 @@ QVariantHash AVDemuxer::options() const
 
 qint64 AVDemuxer::clock()
 {
-    return d->input->clock();
+    if (d->input) {
+        return d->input->clock();
+    }
+    return 0;
 }
 
 void AVDemuxer::setMediaStatus(MediaStatus status)

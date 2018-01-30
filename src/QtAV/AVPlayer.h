@@ -403,6 +403,8 @@ public:
     QVariantHash optionsForAudioCodec() const;
     void setOptionsForVideoCodec(const QVariantHash& dict);
     QVariantHash optionsForVideoCodec() const;
+    void setOptionsForSubtitleCodec(const QVariantHash& dict);
+    QVariantHash optionsForSubtitleCodec() const;
 
     /*!
      * \brief mediaEndAction
@@ -618,6 +620,7 @@ private Q_SLOTS:
     void onSeekFinished(qint64 value);
     void tryClearVideoRenderers();
     void seekChapter(int incr);
+    void onNewStreamFound(int type, int stream_index);
 protected:
     // TODO: set position check timer interval
     virtual void timerEvent(QTimerEvent *);

@@ -46,6 +46,8 @@ void SubtitleProcessor::registerAll()
 SubtitleProcessor::SubtitleProcessor()
     : m_width(0)
     , m_height(0)
+    , m_renderWidth(0)
+    , m_renderHeight(0)
 {
 }
 
@@ -97,6 +99,39 @@ int SubtitleProcessor::frameWidth() const
 int SubtitleProcessor::frameHeight() const
 {
     return m_height;
+}
+
+void SubtitleProcessor::setRenderSize(int width, int height)
+{
+    if (width == m_renderWidth && height == m_renderHeight)
+        return;
+    m_renderWidth = width;
+    m_renderHeight = height;
+}
+
+QSize SubtitleProcessor::renderSize() const
+{
+    return QSize(m_renderWidth, m_renderHeight);
+}
+
+int SubtitleProcessor::renderWidth() const
+{
+    return m_renderWidth;
+}
+
+int SubtitleProcessor::renderHeight() const
+{
+    return m_renderHeight;
+}
+
+void SubtitleProcessor::setOptionsForSubtitleCodec(const QVariantHash & dict)
+{
+    sc_opt = dict;
+}
+
+QVariantHash SubtitleProcessor::optionsForSubtitleCodec() const
+{
+    return sc_opt;
 }
 
 void SubtitleProcessor::onFrameSizeChanged(int width, int height)

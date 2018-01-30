@@ -24,8 +24,10 @@
 #include "QtAV/AVDemuxer.h"
 #include "QtAV/Packet.h"
 #include "QtAV/private/AVCompat.h"
+#include "utils/internal.h"
 #include "PlainText.h"
 #include "utils/Logger.h"
+#include "VideoFrame.h"
 
 namespace QtAV {
 
@@ -44,11 +46,16 @@ public:
     bool processHeader(const QByteArray& codec, const QByteArray& data) Q_DECL_OVERRIDE;
     SubtitleFrame processLine(const QByteArray& data, qreal pts = -1, qreal duration = 0) Q_DECL_OVERRIDE;
     QString getText(qreal pts) const Q_DECL_OVERRIDE;
+    bool canRender() const Q_DECL_OVERRIDE;
+    QImage getImage(qreal pts, QRect* boundingRect = 0) Q_DECL_OVERRIDE;
+    void reset() Q_DECL_OVERRIDE;
 private:
+    bool parsePictureBasedSubtitle(AVSubtitleRect **rects, QImage &image, QPoint &pos);
     bool processSubtitle();
     AVCodecContext *codec_ctx;
     AVDemuxer m_reader;
     QList<SubtitleFrame> m_frames;
+    AVSubtitleType m_subType;
 };
 
 static const SubtitleProcessorId SubtitleProcessorId_FFmpeg = QStringLiteral("qtav.subtitle.processor.ffmpeg");
@@ -58,7 +65,8 @@ static const char kName[] = "FFmpeg";
 FACTORY_REGISTER(SubtitleProcessor, FFmpeg, kName)
 
 SubtitleProcessorFFmpeg::SubtitleProcessorFFmpeg()
-    : codec_ctx(0)
+    : codec_ctx(0),
+      m_subType(SUBTITLE_NONE)
 {
 }
 
@@ -255,10 +263,14 @@ bool SubtitleProcessorFFmpeg::processHeader(const QByteArray &codec, const QByte
         codec_ctx->extradata_size = data.size();
         memcpy(codec_ctx->extradata, data.constData(), data.size());
     }
-    if (avcodec_open2(codec_ctx, c, NULL) < 0) {
+    AVDictionary *opts = NULL;
+    Internal::setOptionsToDict(QVariant(optionsForSubtitleCodec()), &opts);
+    if (avcodec_open2(codec_ctx, c, &opts) < 0) {
+        av_dict_free(&opts);
         avcodec_free_context(&codec_ctx);
         return false;
     }
+    av_dict_free(&opts);
     return true;//codec != QByteArrayLiteral("ass") && codec != QByteArrayLiteral("ssa");
 }
 
@@ -317,6 +329,7 @@ SubtitleFrame SubtitleProcessorFFmpeg::processLine(const QByteArray &data, qreal
     //qDebug() << QTime(0, 0, 0).addMSecs(frame.begin*1000.0) << "-" << QTime(0, 0, 0).addMSecs(frame.end*1000.0) << " fmt: " << sub.format << " pts: " << m_reader.packet().pts //sub.pts
       //       << " rects: " << sub.num_rects << " end: " << sub.end_display_time;
     for (unsigned i = 0; i < sub.num_rects; i++) {
+        m_subType = sub.rects[i]->type;
         switch (sub.rects[i]->type) {
         case SUBTITLE_ASS:
             //qDebug("ass frame: %s", sub.rects[i]->ass);
@@ -329,15 +342,73 @@ SubtitleFrame SubtitleProcessorFFmpeg::processLine(const QByteArray &data, qreal
         case SUBTITLE_BITMAP:
             //sub.rects[i]->w > 0 && sub.rects[i]->h > 0
             //qDebug("bmp sub");
-            frame = SubtitleFrame(); // not support bmp subtitle now
+            //frame = SubtitleFrame(); // not support bmp subtitle now
             break;
         default:
             break;
         }
     }
+    if (sub.num_rects > 0 && sub.rects[0]->type == SUBTITLE_BITMAP) {
+        parsePictureBasedSubtitle(sub.rects, frame.img, frame.pos);
+    }
     av_packet_unref(&packet);
     avsubtitle_free(&sub);
     return frame;
+}
+
+bool SubtitleProcessorFFmpeg::canRender() const
+{
+    return m_subType == SUBTITLE_BITMAP;
+}
+
+QImage SubtitleProcessorFFmpeg::getImage(qreal pts, QRect* boundingRect)
+{
+    return QImage();
+}
+
+void SubtitleProcessorFFmpeg::reset()
+{
+    m_frames.clear();
+}
+
+bool SubtitleProcessorFFmpeg::parsePictureBasedSubtitle(AVSubtitleRect **rects, QImage &image, QPoint &pos)
+{
+    AVSubtitleRect *sub_rect = rects[0];
+    struct SwsContext *sub_convert_ctx = NULL;
+    AVFrame *picture = NULL;
+
+    image.fill(Qt::transparent);
+    picture = av_frame_alloc();
+    if (!picture) {
+        return false;
+    }
+    if (avpicture_alloc((AVPicture *)picture, AV_PIX_FMT_RGB32, sub_rect->w, sub_rect->h) < 0) {
+        av_frame_free(&picture);
+        return false;
+    }
+    sub_convert_ctx = sws_getContext(
+        sub_rect->w, sub_rect->h, AV_PIX_FMT_PAL8,
+        sub_rect->w, sub_rect->h, AV_PIX_FMT_RGB32,
+        SWS_BICUBIC, NULL, NULL, NULL);
+    if (!sub_convert_ctx) {
+        avpicture_free((AVPicture *)picture);
+        av_frame_free(&picture);
+        return false;
+    }
+    sws_scale(sub_convert_ctx, (const uint8_t * const *)sub_rect->data, sub_rect->linesize,
+        0, sub_rect->h, picture->data, picture->linesize);
+    image = QImage((const uchar*)picture->data[0], sub_rect->w, sub_rect->h, picture->linesize[0], QImage::Format_ARGB32).copy();
+    //VideoFrame frame(sub_rect->w, sub_rect->h, VideoFormat(VideoFormat::Format_RGBA32));
+    //frame.setBits(picture->data);
+    //frame.setBytesPerLine(picture->linesize);
+    //image = frame.toImage(QImage::Format_ARGB32);
+    //FIXME giga:remove the line at the left of the image, about 2px width
+    //image = image.copy(2, 0, image.width() - 2, image.height());
+    pos = QPoint(sub_rect->x, sub_rect->y);
+    sws_freeContext(sub_convert_ctx);
+    avpicture_free((AVPicture *)picture);
+    av_frame_free(&picture);
+    return true;
 }
 
 bool SubtitleProcessorFFmpeg::processSubtitle()

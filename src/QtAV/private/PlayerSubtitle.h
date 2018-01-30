@@ -78,6 +78,7 @@ private:
     bool m_auto;
     bool m_enabled; // TODO: m_enable_external
     AVPlayer *m_player;
+    bool m_connected;   //or use "Qt::UniqueConnection" when connecting signal.
     Subtitle *m_sub;
     QString m_file;
     QVariantList m_tracks;

@@ -80,6 +80,13 @@ public:
     QSize frameSize() const;
     int frameWidth() const;
     int frameHeight() const;
+    virtual void reset() {}
+    void setRenderSize(int width, int height);
+    QSize renderSize() const;
+    int renderWidth() const;
+    int renderHeight() const;
+    void setOptionsForSubtitleCodec(const QVariantHash& dict);
+    QVariantHash optionsForSubtitleCodec() const;
 
     // font properties: libass only now
     virtual void setFontFile(const QString& file) {Q_UNUSED(file);}
@@ -107,6 +114,8 @@ protected:
     virtual void onFrameSizeChanged(int width, int height);
 private:
     int m_width, m_height;
+    int m_renderWidth, m_renderHeight;
+    QVariantHash sc_opt;
 };
 
 } //namespace QtAV

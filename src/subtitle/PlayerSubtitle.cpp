@@ -62,6 +62,7 @@ PlayerSubtitle::PlayerSubtitle(QObject *parent)
     , m_enabled(true)
     , m_player(0)
     , m_sub(new Subtitle(this))
+    , m_connected(false)
 {
 }
 
@@ -151,6 +152,9 @@ void PlayerSubtitle::onPlayerStart()
         m_sub->loadAsync();
         return;
     }
+    m_sub->setStatistics(m_player->statistics());
+    m_sub->setOptionsForSubtitleCodec(m_player->optionsForSubtitleCodec());
+    updateInternalSubtitleTracks(m_player->internalSubtitleTracks());
     if (autoLoad() && !m_sub->fileName().isEmpty())
         return; //already loaded in onPlayerSourceChanged()
     // try embedded subtitles
@@ -184,6 +188,9 @@ void PlayerSubtitle::onEnabledChanged(bool value)
     }
     if (!m_player)
         return;
+    m_sub->setStatistics(m_player->statistics());
+    m_sub->setOptionsForSubtitleCodec(m_player->optionsForSubtitleCodec());
+    updateInternalSubtitleTracks(m_player->internalSubtitleTracks());
     if (!autoLoad()) // fallback to internal subtitles
         return;
     m_sub->setFileName(getSubtitleBasePath(m_player->file()));
@@ -208,6 +215,9 @@ void PlayerSubtitle::tryReload(int flag)
         return;
     if (!m_player->isPlaying())
         return;
+    m_sub->setStatistics(m_player->statistics());
+    m_sub->setOptionsForSubtitleCodec(m_player->optionsForSubtitleCodec());
+    updateInternalSubtitleTracks(m_player->internalSubtitleTracks());
     const int kReloadExternal = 1<<1;
     if (flag & kReloadExternal) {
         //engine or charset changed
@@ -256,7 +266,7 @@ void PlayerSubtitle::processInternalSubtitleHeader(const QByteArray& codec, cons
 
 void PlayerSubtitle::connectSignals()
 {
-    if (!m_player)
+    if (!m_player || m_connected)
         return;
     connect(m_player, SIGNAL(sourceChanged()), this, SLOT(onPlayerSourceChanged()));
     connect(m_player, SIGNAL(positionChanged(qint64)), this, SLOT(onPlayerPositionChanged()));
@@ -268,11 +278,12 @@ void PlayerSubtitle::connectSignals()
     connect(m_player, SIGNAL(subtitleStreamChanged(int)), this, SLOT(tryReloadInternalSub()));
     connect(m_sub, SIGNAL(codecChanged()), this, SLOT(tryReload()));
     connect(m_sub, SIGNAL(enginesChanged()), this, SLOT(tryReload()));
+    m_connected = true;
 }
 
 void PlayerSubtitle::disconnectSignals()
 {
-    if (!m_player)
+    if (!m_player || !m_connected)
         return;
     disconnect(m_player, SIGNAL(sourceChanged()), this, SLOT(onPlayerSourceChanged()));
     disconnect(m_player, SIGNAL(positionChanged(qint64)), this, SLOT(onPlayerPositionChanged()));
@@ -282,6 +293,7 @@ void PlayerSubtitle::disconnectSignals()
     disconnect(m_player, SIGNAL(internalSubtitleTracksChanged(QVariantList)), this, SLOT(updateInternalSubtitleTracks(QVariantList)));
     disconnect(m_sub, SIGNAL(codecChanged()), this, SLOT(tryReload()));
     disconnect(m_sub, SIGNAL(enginesChanged()), this, SLOT(tryReload()));
+    m_connected = false;
 }
 
 } //namespace QtAV

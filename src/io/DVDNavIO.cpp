@@ -32,7 +32,7 @@ extern "C" {
 #define FFMin(a, b) (a < b) ? a : b
 #define FFMax(a, b) (a > b) ? a : b
 #define STREAM_BUFFER_MIN 2048
-#define STREAM_BUFFER_SIZE (2*STREAM_BUFFER_MIN) // must be at least 2*STREAM_BUFFER_MIN
+#define STREAM_BUFFER_SIZE (STREAM_BUFFER_MIN) // must be at least 2*STREAM_BUFFER_MIN
 #define STREAM_MAX_SECTOR_SIZE (8*1024)
 #define STREAM_REDIRECTED -2
 #define STREAM_UNSUPPORTED -1
@@ -88,7 +88,6 @@ typedef struct stream {
     int eof;
     int mode; //STREAM_READ or STREAM_WRITE
     char* url;  // strdup() of filename/url
-    unsigned char buffer[STREAM_BUFFER_SIZE>STREAM_MAX_SECTOR_SIZE?STREAM_BUFFER_SIZE:STREAM_MAX_SECTOR_SIZE];
 } stream_t;
 
 typedef enum {
@@ -160,6 +159,8 @@ public:
     */
     virtual qint64 size() const Q_DECL_OVERRIDE;
     virtual qint64 clock() Q_DECL_OVERRIDE;
+    virtual qint64 startTimeUs() Q_DECL_OVERRIDE;
+    virtual qint64 duration() Q_DECL_OVERRIDE;
     virtual void setDuration(qint64 duration) Q_DECL_OVERRIDE;
 
 protected:
@@ -184,7 +185,10 @@ public:
         current_title(1),
         current_chapter(0),
         current_chapter_index(0),
+        started(false),
+        current_start_time(0),
         current_time(0),
+        current_duration(0),
         custom_duration(0),
         nb_of_chapter(0),
         cur_chapter_index(0),
@@ -202,6 +206,7 @@ public:
     bool stream_dvdnav_seek(stream_t *s, int64_t newpos);
     int  stream_dvdnav_control(stream_t *stream, int cmd, void* arg);
     void stream_dvdnav_close();
+    void stream_dvdnav_get_time();
     int64_t update_current_time();
 
 public:
@@ -213,7 +218,10 @@ public:
     QList<int> parts;
     int dvd_angle;
     int dvd_last_chapter;
+    bool started;
+    qint64 current_start_time;
     qint64 current_time;
+    qint64 current_duration;
     qint64 custom_duration;
 
     int nb_of_chapter;
@@ -318,11 +326,29 @@ qint64 DVDNavIO::clock()
 {
     DPTR_D(DVDNavIO);
 
-    if (d.priv->state & NAV_FLAG_EOF) {
-        return d.custom_duration / 1000000;
+    int64_t time = 0;
+
+    if (!d.dvd_stream || !d.priv)
+        return 0;
+    if (d.priv && (d.priv->state & NAV_FLAG_EOF)) {
+        return d.current_duration / 1000;
     }
-    int64_t time = d.update_current_time();
-    return time;/*second*/
+    time = d.update_current_time();
+    return time;/*ms*/
+}
+
+qint64 DVDNavIO::startTimeUs()
+{
+    DPTR_D(DVDNavIO);
+
+    return d.current_start_time;
+}
+
+qint64 DVDNavIO::duration()
+{
+    DPTR_D(DVDNavIO);
+
+    return d.current_duration;
 }
 
 void DVDNavIO::setDuration(qint64 duration)
@@ -661,7 +687,7 @@ int DVDNavIOPrivate::dvdnav_stream_read(dvdnav_priv_t * priv, unsigned char *buf
             *len = 0;
         }
     }
-    if (event != DVDNAV_BLOCK_OK) {
+    if (event != DVDNAV_BLOCK_OK && event != DVDNAV_NAV_PACKET) {
         *len = 0;
     }
     return event;
@@ -748,7 +774,6 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
                 priv->state |= NAV_FLAG_WAIT_READ;
             if (dvdnav_current_title_info(priv->dvdnav, &tit, &part) == DVDNAV_STATUS_OK) {
                 qDebug("\r\nDVDNAV, NEW TITLE %d\r\n", tit);
-
                 dvdnav_get_highlight(priv, 0);
                 if (current_title > 0 && tit != current_title) {
                     priv->state |= NAV_FLAG_EOF;
@@ -824,7 +849,6 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
             break;
         }
     }
-    qDebug("DVDNAV stream_dvdnav_read len: %d\n", len);
     return len;
 }
 #else
@@ -1110,9 +1134,14 @@ void DVDNavIOPrivate::update_title_len(stream_t *s)
 
 int64_t DVDNavIOPrivate::update_current_time()
 {
-    int64_t time = dvdnav_get_current_time(priv->dvdnav) / 90000.0f;
+    int64_t time = dvdnav_get_current_time(priv->dvdnav) / 90.0f;
+    time -= current_start_time;
     if (time != current_time) {
         current_time = time;
+    }
+    if (!started) {
+        current_start_time = time;
+        started = true;
     }
     return current_time;
 }
@@ -1174,7 +1203,7 @@ int DVDNavIOPrivate::stream_dvdnav_open(const char *filename)
     dvd_stream->flags = STREAM_READ;
     dvd_stream->type = STREAMTYPE_DVDNAV;
 
-    if (custom_duration == 0) {
+    {
         char buf[STREAM_BUFFER_SIZE];
         while (dvd_stream->end_pos == 0) {
             stream_dvdnav_read(dvd_stream, buf, STREAM_BUFFER_SIZE);
@@ -1186,6 +1215,7 @@ int DVDNavIOPrivate::stream_dvdnav_open(const char *filename)
     //stream_dvdnav_seek(dvd_stream, dvd_stream->start_pos);
     if(!dvd_stream->pos && current_title > 0)
         qDebug() << "INIT ERROR: couldn't get init pos %s\r\n" << dvdnav_err_to_string(priv->dvdnav);
+    stream_dvdnav_get_time();
 
     return STREAM_OK;
 }
@@ -1200,6 +1230,23 @@ void DVDNavIOPrivate::stream_dvdnav_close()
         if (priv->dvdnav) dvdnav_close(priv->dvdnav);
         delete priv;
         priv = NULL;
+    }
+    current_title = 0;
+    started = false;
+    current_start_time = 0;
+    current_time = 0;
+    current_duration = 0;
+    custom_duration = 0;
+}
+
+void DVDNavIOPrivate::stream_dvdnav_get_time()
+{
+    uint64_t *parts = NULL, duration = 0;
+    uint32_t n, i;
+    n = dvdnav_describe_title_chapters(priv->dvdnav, current_title, &parts, &duration);
+    if (parts) {
+        current_duration = duration / 90;
+        current_duration *= 1000;
     }
 }
 

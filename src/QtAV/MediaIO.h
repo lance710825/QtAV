@@ -140,7 +140,9 @@ public:
     //struct AVIOContext; //anonymous struct in FFmpeg1.0.x
     void* avioContext(); //const?
     void release(); //TODO: how to remove it?
-    virtual qint64 clock() {return 0;}
+    virtual qint64 clock() {return 0;}/*us*/
+    virtual qint64 startTimeUs() {return 0;}/*us*/
+    virtual qint64 duration() {return 0;}/*us*/
     virtual void setDuration(qint64 duration/*us*/) {Q_UNUSED(duration)}
 public:
     static void registerAll();

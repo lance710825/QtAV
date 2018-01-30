@@ -112,6 +112,7 @@ public:
     SubtitleFrame frame;
     QString current_text;
     QImage current_image;
+    QPoint current_pos;
     SubImageSet current_ass;
     QLinkedList<SubtitleFrame>::iterator itf;
     /* number of subtitle frames at current time.
@@ -123,6 +124,7 @@ public:
     bool force_font_file;
     QString font_file;
     QString fonts_dir;
+    Statistics statistics;
 };
 
 Subtitle::Subtitle(QObject *parent) :
@@ -389,6 +391,23 @@ void Subtitle::setFontFileForced(bool value)
     }
 }
 
+void QtAV::Subtitle::setStatistics(const Statistics & s)
+{
+    priv->statistics = s;
+}
+
+Statistics & QtAV::Subtitle::statistics() const
+{
+    return priv->statistics;
+}
+
+void QtAV::Subtitle::setOptionsForSubtitleCodec(const QVariantHash & dict)
+{
+    foreach(SubtitleProcessor *processor, priv->processors) {
+        processor->setOptionsForSubtitleCodec(dict);
+    }
+}
+
 void Subtitle::load()
 {
     SubtitleProcessor *old_processor = priv->processor;
@@ -515,6 +534,8 @@ QImage Subtitle::getImage(int width, int height, QRect* boundingRect)
     Q_UNUSED(lock);
     if (!isLoaded())
         return QImage();
+    if (!priv->current_count)
+        return QImage();
     if (width == 0 || height == 0)
         return QImage();
 #if 0
@@ -528,9 +549,23 @@ QImage Subtitle::getImage(int width, int height, QRect* boundingRect)
     priv->update_image = false;
     if (!canRender())
         return QImage();
-    priv->processor->setFrameSize(width, height);
-    // TODO: store bounding rect here and not in processor
-    priv->current_image = priv->processor->getImage(priv->t - priv->delay, boundingRect);
+
+    priv->current_image = QImage();
+    const int count = qAbs(priv->current_count);
+    QLinkedList<SubtitleFrame>::iterator it = priv->current_count > 0 ? priv->itf : priv->itf + (priv->current_count + 1);
+    for (int i = 0; i < count; ++i) {
+        if (!it->img.isNull()) {
+            priv->current_image = it->img;
+            priv->current_pos = it->pos;
+            break;
+        }
+        ++it;
+    }
+    *boundingRect = QRect(priv->current_pos, priv->current_image.size());
+
+    //priv->processor->setFrameSize(width, height);
+    //// TODO: store bounding rect here and not in processor
+    //priv->current_image = priv->processor->getImage(priv->t - priv->delay, boundingRect);
     return priv->current_image;
 }
 
@@ -562,6 +597,7 @@ bool Subtitle::processHeader(const QByteArray& codec, const QByteArray &data)
     foreach (SubtitleProcessor *sp, priv->processors) {
         if (sp->supportedTypes().contains(QLatin1String(codec))) {
             priv->processor = sp;
+            priv->processor->setFrameSize(priv->statistics.video_only.width, priv->statistics.video_only.height);
             qDebug() << "current subtitle processor: " << sp->name();
             break;
         }

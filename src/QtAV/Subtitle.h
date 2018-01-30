@@ -21,6 +21,7 @@
 #ifndef QTAV_SUBTITLE_H
 #define QTAV_SUBTITLE_H
 #include <QtAV/SubImage.h>
+#include <QtAV/Statistics.h>
 #include <QtCore/QObject>
 #include <QtCore/QStringList>
 #include <QtCore/QUrl>
@@ -45,6 +46,8 @@ public:
     qreal begin;
     qreal end;
     QString text; //plain text. always valid
+    QImage img;
+    QPoint pos;
 };
 
 class Q_AV_EXPORT Subtitle : public QObject
@@ -179,6 +182,9 @@ public:
     void setFontsDir(const QString& value);
     bool isFontFileForced() const;
     void setFontFileForced(bool value);
+    void setStatistics(const Statistics &s);
+    Statistics& statistics() const;
+    void setOptionsForSubtitleCodec(const QVariantHash& dict);
 public Q_SLOTS:
     /*!
      * \brief start

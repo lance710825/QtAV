@@ -86,6 +86,7 @@ AVPlayer::AVPlayer(QObject *parent) :
     connect(&d->demuxer, SIGNAL(mediaStatusChanged(QtAV::MediaStatus)), this, SLOT(updateMediaStatus(QtAV::MediaStatus)), Qt::DirectConnection);
     connect(&d->demuxer, SIGNAL(loaded()), this, SIGNAL(loaded()));
     connect(&d->demuxer, SIGNAL(seekableChanged()), this, SIGNAL(seekableChanged()));
+    connect(&d->demuxer, SIGNAL(newStreamFound(int, int)), this, SLOT(onNewStreamFound(int, int)));
     d->read_thread = new AVDemuxThread(this);
     d->read_thread->setDemuxer(&d->demuxer);
     //direct connection can not sure slot order?
@@ -460,6 +461,16 @@ QVariantHash AVPlayer::optionsForVideoCodec() const
     return d->vc_opt;
 }
 
+void AVPlayer::setOptionsForSubtitleCodec(const QVariantHash &dict)
+{
+    d->sc_opt = dict;
+}
+
+QVariantHash AVPlayer::optionsForSubtitleCodec() const
+{
+    return d->sc_opt;
+}
+
 void AVPlayer::setMediaEndAction(MediaEndAction value)
 {
     if (d->end_action == value)
@@ -490,7 +501,8 @@ void AVPlayer::setFile(const QString &path)
     d->current_source = p;
     // TODO: d->reset_state = d->demuxer2.setMedia(path);
     if (d->reset_state) {
-        d->audio_track = d->video_track = d->subtitle_track = 0;
+        d->audio_track = d->video_track = 0;
+        d->subtitle_track = -1;
         Q_EMIT sourceChanged();
         //Q_EMIT error(AVError(AVError::NoError));
     }
@@ -849,8 +861,8 @@ qint64 AVPlayer::position() const
 {
     // TODO: videoTime()?
     qint64 pts = 0;
-    if (d->custom_duration > 0) {
-        pts = d->demuxer.clock() * 1000;
+    if (d->demuxer.customDuration() > 0) {
+        pts = d->demuxer.clock();
     } else {
         pts = d->clock->value()*1000.0;
     }
@@ -1382,8 +1394,8 @@ void AVPlayer::updateMediaStatus(QtAV::MediaStatus status)
 void AVPlayer::onSeekFinished(qint64 value)
 {
     d->seeking = false;
-    if (d->custom_duration > 0) {
-        value = d->demuxer.clock() * 1000;
+    if (d->demuxer.customDuration() > 0) {
+        value = d->demuxer.clock();
     }
     Q_EMIT seekFinished(value);
     //d->clock->updateValue(value/1000.0);
@@ -1438,6 +1450,25 @@ void AVPlayer::seekChapter(int incr)
     qDebug() << QString::fromLatin1("Seeking to chapter : ") << QString::number(i);
     setPosition(av_rescale_q(ic->chapters[i]->start, ic->chapters[i]->time_base,
                              av_time_base_q) / 1000);
+}
+
+void QtAV::AVPlayer::onNewStreamFound(int type, int stream_index)
+{
+    switch (type) {
+    case AVDemuxer::VideoStream:
+        //TODO
+        break;
+    case AVDemuxer::AudioStream:
+        //TODO
+        break;
+    case AVDemuxer::SubtitleStream:
+        d->subtitle_tracks = d->getTracksInfo(&d->demuxer, AVDemuxer::SubtitleStream);
+        Q_EMIT internalSubtitleTracksChanged(d->subtitle_tracks);
+        if (d->loaded && d->subtitle_track >= 0) {
+            d->applySubtitleStream(d->subtitle_track, this);
+        }
+        break;
+    }
 }
 
 void AVPlayer::stop()

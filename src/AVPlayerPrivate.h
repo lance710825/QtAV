@@ -141,7 +141,7 @@ public:
     QVector<VideoDecoderId> vc_ids;
     int brightness, contrast, saturation;
 
-    QVariantHash ac_opt, vc_opt;
+    QVariantHash ac_opt, vc_opt, sc_opt;
 
     bool seeking;
     SeekType seek_type;
