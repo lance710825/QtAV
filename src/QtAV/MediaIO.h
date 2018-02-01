@@ -144,6 +144,7 @@ public:
     virtual qint64 startTimeUs() {return 0;}/*us*/
     virtual qint64 duration() {return 0;}/*us*/
     virtual void setDuration(qint64 duration/*us*/) {Q_UNUSED(duration)}
+    virtual void setOptionsForIOCodec(const QVariantHash & dict) {Q_UNUSED(dict)}
 public:
     static void registerAll();
     template<class C> static bool Register(MediaIOId id, const char* name) { return Register(id, create<C>, name);}

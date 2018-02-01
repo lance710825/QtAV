@@ -471,6 +471,11 @@ QVariantHash AVPlayer::optionsForSubtitleCodec() const
     return d->sc_opt;
 }
 
+void QtAV::AVPlayer::setOptionsForIOCodec(const QVariantHash & dict)
+{
+    d->io_opt = dict;
+}
+
 void AVPlayer::setMediaEndAction(MediaEndAction value)
 {
     if (d->end_action == value)
@@ -672,7 +677,7 @@ void AVPlayer::loadInternal()
     }
     qDebug() << "Loading " << d->current_source << " ...";
     if (d->current_source.type() == QVariant::String) {
-        d->demuxer.setMedia(d->current_source.toString(), d->custom_duration);
+        d->demuxer.setMedia(d->current_source.toString(), d->io_opt, d->custom_duration);
     } else {
         if (d->current_source.canConvert<QIODevice*>()) {
             d->demuxer.setMedia(d->current_source.value<QIODevice*>());

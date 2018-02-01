@@ -126,6 +126,17 @@ enum stream_ctrl_type {
     stream_ctrl_sub
 };
 
+enum file_system {
+    AUTO = 0,
+    UDF,
+    ISO9660
+};
+
+static bool compareParts(int part1, int part2)
+{
+    return part1 < part2;
+}
+
 struct stream_lang_req {
     enum stream_ctrl_type type;
     int id;
@@ -162,6 +173,7 @@ public:
     virtual qint64 startTimeUs() Q_DECL_OVERRIDE;
     virtual qint64 duration() Q_DECL_OVERRIDE;
     virtual void setDuration(qint64 duration) Q_DECL_OVERRIDE;
+    virtual void setOptionsForIOCodec(const QVariantHash & dict) Q_DECL_OVERRIDE;
 
 protected:
     DVDNavIO(DVDNavIOPrivate &d);
@@ -182,7 +194,7 @@ public:
         priv(NULL),
         dvd_angle(0),
         dvd_last_chapter(1),
-        current_title(1),
+        current_title(0),
         current_chapter(0),
         current_chapter_index(0),
         started(false),
@@ -190,6 +202,8 @@ public:
         current_time(0),
         current_duration(0),
         custom_duration(0),
+        current_cell(0),
+        file_sys(UDF),
         nb_of_chapter(0),
         cur_chapter_index(0),
         skip_nav_pack(false),
@@ -223,6 +237,8 @@ public:
     qint64 current_time;
     qint64 current_duration;
     qint64 custom_duration;
+    int current_cell;
+    file_system file_sys;
 
     int nb_of_chapter;
     int cur_chapter_index;
@@ -358,9 +374,28 @@ void DVDNavIO::setDuration(qint64 duration)
     d.custom_duration = duration;
 }
 
-static bool compareParts(int part1, int part2)
+void DVDNavIO::setOptionsForIOCodec(const QVariantHash &dict)
 {
-    return part1 < part2;
+    DPTR_D(DVDNavIO);
+
+    QVariant opt(dict);
+    if (dict.contains("filesys")) {
+        int sys = dict.value("filesys").toInt();
+        if (sys >= AUTO && sys <= ISO9660) {
+            d.file_sys = (file_system)sys;
+        }
+    }
+    if (dict.contains("title")) {
+        d.current_title = dict.value("title").toInt();
+    }
+    if (dict.contains("chapter")) {
+        QList<QVariant> lstParts = dict.value("chapter").toList();
+        d.parts.clear();
+        for (int i = 0; i < lstParts.count(); ++i) {
+            d.parts.append(lstParts.at(i).toInt());
+        }
+        qSort(d.parts.begin(), d.parts.end(), compareParts);
+    }
 }
 
 void DVDNavIO::onUrlChanged()
@@ -370,28 +405,8 @@ void DVDNavIO::onUrlChanged()
     QString filename, titleInfo;
 
     if (path.startsWith("dvdnav:")) {
-        path = path.mid(9);
-        QStringList lst = path.split("|", QString::SkipEmptyParts);
-        if (lst.count() < 2) {
-            filename = path;
-        }
-        else {
-            filename = lst.at(0).trimmed();
-            titleInfo = lst.at(1).trimmed();
-            QStringList lstInfo = titleInfo.split(":", QString::SkipEmptyParts);
-            if (!lstInfo.isEmpty()) {
-                d.current_title = lstInfo.at(0).toInt();
-                if (lstInfo.count() == 2) {
-                    QStringList parts = lstInfo.at(1).split(",", QString::SkipEmptyParts);
-                    foreach(QString part, parts) {
-                        if (!d.parts.contains(part.toInt()))
-                            d.parts.append(part.toInt());
-                    }
-                    qSort(d.parts.begin(), d.parts.end(), compareParts);
-                }
-            }
-        }
-        d.stream_dvdnav_open(filename.toUtf8().constData());
+        path = path.mid(9); //remove "dvdnav://"
+        d.stream_dvdnav_open(path.toUtf8().constData());
     }
 }
 
@@ -404,7 +419,6 @@ stream_t* DVDNavIOPrivate::new_stream(int fd, int type)
     s->type=type;
     s->buf_pos=s->buf_len=0;
     s->start_pos=s->end_pos=0;
-    s->url=NULL;
     if(s->eof){
         s->buf_pos=s->buf_len=0;
         s->eof=0;
@@ -759,6 +773,7 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
         }
         case DVDNAV_VTS_CHANGE: {
             int tit = 0, part = 0;
+            current_cell = 0;
             dvdnav_vts_change_event_t *vts_event = (dvdnav_vts_change_event_t *)buf;
             qDebug("DVDNAV, switched to title: %d\r\n", vts_event->new_vtsN);
             priv->state |= NAV_FLAG_CELL_CHANGE;
@@ -775,7 +790,7 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
             if (dvdnav_current_title_info(priv->dvdnav, &tit, &part) == DVDNAV_STATUS_OK) {
                 qDebug("\r\nDVDNAV, NEW TITLE %d\r\n", tit);
                 dvdnav_get_highlight(priv, 0);
-                if (current_title > 0 && tit != current_title) {
+                if (current_title > 0 && tit != current_title && started) {
                     priv->state |= NAV_FLAG_EOF;
                     return 0;
                 }
@@ -837,6 +852,12 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
 //                    }
 //                }
 //            }
+            //No matter for now
+            //if (started && current_cell == ev->cellN) {
+            //    priv->state |= NAV_FLAG_EOF;
+            //    return 0;
+            //}
+            //current_cell = ev->cellN;
             dvdnav_get_highlight(priv, 1);
             break;
         }
@@ -1146,22 +1167,58 @@ int64_t DVDNavIOPrivate::update_current_time()
     return current_time;
 }
 
-int DVDNavIOPrivate::stream_dvdnav_open(const char *filename)
+#ifdef _WIN32
+static int utf8_to_mb(char* str_utf8, char* local_buf, size_t len) {
+    int widelen;
+    wchar_t *widestr;
+    int mblen;
+
+    widelen = MultiByteToWideChar(CP_UTF8, 0, str_utf8, strlen(str_utf8), NULL, 0);
+    widestr = (wchar_t *)malloc(sizeof(wchar_t)*(widelen + 1));
+    if (widestr == NULL) {
+        return 0;
+    }
+    MultiByteToWideChar(CP_UTF8, 0, str_utf8, strlen(str_utf8), widestr, widelen);
+
+    mblen = WideCharToMultiByte(CP_ACP, 0, widestr, widelen, NULL, 0, NULL, NULL);
+    if (mblen + 1 > len) {
+        free(widestr);
+        return 0;
+    }
+    WideCharToMultiByte(CP_ACP, 0, widestr, widelen, local_buf, mblen, NULL, NULL);
+    local_buf[mblen] = '\0';
+    free(widestr);
+    return 1;
+}
+#endif
+
+int DVDNavIOPrivate::stream_dvdnav_open(const char *file)
 {
     struct stream_nav_priv_s* p = NULL;
     dvdnav_status_t status = DVDNAV_STATUS_ERR;
     const char *titleName;
     int titles = 0;
+    char filename[2048];
+    char *temp = strdup(file);
+    const char* filesystem[] = { "auto", "udf", "iso9660" };
 
+    memset(filename, 0, 2048);
+#ifdef _WIN32
+    if (!utf8_to_mb(temp, filename, 2048)) {
+        free(temp);
+        return STREAM_UNSUPPORTED;
+    }
+#endif
+    free(temp);
     if (dvd_stream == NULL) {
         dvd_stream = new_stream(-2, -2);
-        dvd_stream->url = strdup(filename);
         dvd_stream->flags |= STREAM_READ;
     }
 
     if (!(priv = (dvdnav_priv_t*)calloc(1, sizeof(dvdnav_priv_t))))
         return STREAM_UNSUPPORTED;
 
+    DVDReadMode(file_sys);
     if (dvdnav_open(&(priv->dvdnav), filename) != DVDNAV_STATUS_OK || !priv->dvdnav) {
         delete dvd_stream;
         dvd_stream = NULL;
@@ -1237,6 +1294,7 @@ void DVDNavIOPrivate::stream_dvdnav_close()
     current_time = 0;
     current_duration = 0;
     custom_duration = 0;
+    current_cell = 0;
 }
 
 void DVDNavIOPrivate::stream_dvdnav_get_time()

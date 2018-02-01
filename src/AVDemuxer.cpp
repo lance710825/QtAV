@@ -671,7 +671,7 @@ MediaIO* AVDemuxer::mediaIO() const
     return d->input;
 }
 
-bool AVDemuxer::setMedia(const QString &fileName, qint64 duration)
+bool AVDemuxer::setMedia(const QString &fileName, const QVariantHash &dict, qint64 duration)
 {
     if (d->input) {
         delete d->input;
@@ -708,8 +708,8 @@ bool AVDemuxer::setMedia(const QString &fileName, qint64 duration)
         // supportedProtocols() is not complete. so try MediaIO 1st, if not found, fallback to libavformat
         d->input = MediaIO::createForProtocol(scheme);
         if (d->input) {
-            if (duration > 0)
-                setCustomDuration(duration);
+            setOptionsForIOCodec(dict);
+            setCustomDuration(duration);
             d->input->setUrl(d->file);
         }
     }
@@ -766,6 +766,8 @@ QString AVDemuxer::formatForced() const
 
 void AVDemuxer::setCustomDuration(int64_t duration)
 {
+    if (duration <= 0)
+        return;
     d->custom_duration = duration;
     if (d->input) {
         d->input->setDuration(duration);
@@ -1197,6 +1199,12 @@ qint64 AVDemuxer::clock()
         return d->input->clock();
     }
     return 0;
+}
+
+void QtAV::AVDemuxer::setOptionsForIOCodec(const QVariantHash & dict)
+{
+    if (d->input)
+        d->input->setOptionsForIOCodec(dict);
 }
 
 void AVDemuxer::setMediaStatus(MediaStatus status)

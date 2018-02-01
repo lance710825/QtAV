@@ -405,6 +405,12 @@ public:
     QVariantHash optionsForVideoCodec() const;
     void setOptionsForSubtitleCodec(const QVariantHash& dict);
     QVariantHash optionsForSubtitleCodec() const;
+    /*!
+     * opt["filesys"] = 0-auto / 1-udf(default) / 2-iso9660
+     * opt["title"] = title index
+     * opt["chapter"] = chapter list, use QList<int> to assemble.
+     */
+    void setOptionsForIOCodec(const QVariantHash& dict);
 
     /*!
      * \brief mediaEndAction
