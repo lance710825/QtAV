@@ -271,10 +271,11 @@ void AVDemuxThread::seekInternal(qint64 pos, SeekType type)
         t->packetQueue()->setBlocking(false); // aqueue bufferValue can be small (1), we can not put and take
         Packet pkt;
         pkt.pts = qreal(pos)/1000.0;
+        pkt.position = sync_id;
         if (demuxer->customDuration() > 0) {
             pkt.pts = 0;
+            pkt.position = 0;
         }
-        pkt.position = sync_id;
         t->packetQueue()->put(pkt);
         t->packetQueue()->setBlocking(true); // blockEmpty was false when eof is read.
         if (isPaused()) { //TODO: deal with pause in AVThread?

@@ -1262,8 +1262,13 @@ int DVDNavIOPrivate::stream_dvdnav_open(const char *file)
 
     {
         char buf[STREAM_BUFFER_SIZE];
+        int ret = 0;
         while (dvd_stream->end_pos == 0) {
-            stream_dvdnav_read(dvd_stream, buf, STREAM_BUFFER_SIZE);
+            ret = stream_dvdnav_read(dvd_stream, buf, STREAM_BUFFER_SIZE);
+            if (ret <= 0) {
+                /*Prevent forever loops if the DVD file is invalid.*/
+                break;
+            }
         }
         if (!dvdnav_first_play()) {
             return STREAM_UNSUPPORTED;

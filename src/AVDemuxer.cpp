@@ -608,7 +608,9 @@ bool AVDemuxer::seek(qint64 pos)
     int ret = 0;
     if (d->custom_duration > 0 && mediaIO()) {
         ret = mediaIO()->seek(pos, -200);
-        avformat_flush(d->format_ctx);
+        if (ret) {
+            avformat_flush(d->format_ctx);
+        }
     }
     else {
         ret = av_seek_frame(d->format_ctx, -1, upos, seek_flag);
