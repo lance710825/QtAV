@@ -239,6 +239,7 @@ public:
     qint64 custom_duration;
     int current_cell;
     file_system file_sys;
+    int error_count;
 
     int nb_of_chapter;
     int cur_chapter_index;
@@ -696,6 +697,7 @@ int DVDNavIOPrivate::dvdnav_stream_read(dvdnav_priv_t * priv, unsigned char *buf
     int event = DVDNAV_NOP;
 
     if (dvdnav_get_next_block(priv->dvdnav, buf, &event, len) != DVDNAV_STATUS_OK) {
+        ++error_count;
         if (dvdnav_sector_search(priv->dvdnav, 1, SEEK_CUR) == DVDNAV_STATUS_ERR) {
             qDebug("sector search error : %s\n", dvdnav_err_to_string(priv->dvdnav));
             *len = 0;
@@ -719,8 +721,13 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
     len = 0;
     if (!s->end_pos)
         update_title_len(s);
+    error_count = 0;
     while (!len) /* grab all event until DVDNAV_BLOCK_OK (len=2048), DVDNAV_STOP or DVDNAV_STILL_FRAME */
     {
+        if (error_count >= 100) {
+            qDebug() << "Too many consecutive errors read!\n";
+            return 0;
+        }
         event = dvdnav_stream_read(priv, (unsigned char*)buf, &len);
         if (event == -1 || len == -1)
         {
