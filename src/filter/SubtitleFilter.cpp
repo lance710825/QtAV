@@ -196,12 +196,13 @@ void SubtitleFilter::process(Statistics *statistics, VideoFrame *frame)
         if (context()->paint_device->height() > 0) {
             float ratioW = video_frame_width * 1.0 / video_render_width;
             float ratioH = video_frame_height * 1.0 / video_render_height;
-            if (ratioW > 0) {
+            if (ratioW > 0 && ratioH >0) {
                 pos.setX(pos.x() / ratioW);
-            }
-            if (ratioH > 0) {
                 pos.setY(pos.y() / ratioH);
                 img = img.scaled(img.width() / ratioW, img.height() / ratioH);
+            }
+            else {
+                img = img.scaled(1, 1);
             }
             rect = QRect(pos, img.size());
         }
