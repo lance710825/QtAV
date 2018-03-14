@@ -201,7 +201,7 @@ void SubtitleFilter::process(Statistics *statistics, VideoFrame *frame)
             }
             if (ratioH > 0) {
                 pos.setY(pos.y() / ratioH);
-                img = img.scaled(img.width() / ratioH, img.height() / ratioH);
+                img = img.scaled(img.width() / ratioW, img.height() / ratioH);
             }
             rect = QRect(pos, img.size());
         }
