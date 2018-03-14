@@ -240,6 +240,7 @@ public:
     int current_cell;
     file_system file_sys;
     int error_count;
+    int clock_flag;
 
     int nb_of_chapter;
     int cur_chapter_index;
@@ -351,6 +352,10 @@ qint64 DVDNavIO::clock()
         return d.current_duration / 1000;
     }
     time = d.update_current_time();
+    if (d.clock_flag) {
+        --d.clock_flag;
+        return 0;
+    }
     return time;/*ms*/
 }
 
@@ -1209,6 +1214,7 @@ int DVDNavIOPrivate::stream_dvdnav_open(const char *file)
     char *temp = strdup(file);
     const char* filesystem[] = { "auto", "udf", "iso9660" };
 
+    clock_flag = 2;
     memset(filename, 0, 2048);
 #ifdef _WIN32
     if (!utf8_to_mb(temp, filename, 2048)) {
