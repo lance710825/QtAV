@@ -370,6 +370,8 @@ qint64 DVDNavIO::duration()
 {
     DPTR_D(DVDNavIO);
 
+    if (d.custom_duration > 0)
+        return d.custom_duration;
     return d.current_duration;
 }
 
