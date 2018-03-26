@@ -746,15 +746,16 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
         }
         switch (event) {
         case DVDNAV_STILL_FRAME: {
+            pci_t *pci;
             dvdnav_still_event_t *still_event = (dvdnav_still_event_t *)buf;
-            priv->still_length = still_event->length;
-            /* set still frame duration */
-            priv->duration = dvdnav_get_duration(priv->still_length);
-            if (priv->still_length <= 1) {
-                pci_t *pnavpci = dvdnav_get_current_nav_pci(priv->dvdnav);
-                priv->duration = dvdtimetomsec(&pnavpci->pci_gi.e_eltm);
-            }
-            return 0;
+            if (still_event->length < 0xff)
+                qDebug("Skipping %d seconds of still frame\n", still_event->length);
+            else
+                qDebug("Skipping indefinite length still frame\n");
+            pci = dvdnav_get_current_nav_pci(priv->dvdnav);
+            dvdnav_button_activate(priv->dvdnav, pci);
+            dvdnav_still_skip(priv->dvdnav);
+            break;
         }
         case DVDNAV_HIGHLIGHT: {
             dvdnav_get_highlight(priv, 1);
@@ -802,9 +803,9 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
             if (priv->state & NAV_FLAG_WAIT_READ_AUTO)
                 priv->state |= NAV_FLAG_WAIT_READ;
             if (dvdnav_current_title_info(priv->dvdnav, &tit, &part) == DVDNAV_STATUS_OK) {
-                qDebug("\r\nDVDNAV, NEW TITLE %d\r\n", tit);
+                qDebug("DVDNAV, NEW TITLE %d.", tit);
                 dvdnav_get_highlight(priv, 0);
-                if (current_title > 0 && tit != current_title && started) {
+                if (started && current_title > 0 && tit != current_title) {
                     priv->state |= NAV_FLAG_EOF;
                     return 0;
                 }
@@ -846,32 +847,6 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
             priv->state &= ~NAV_FLAG_WAIT;
             if (priv->state & NAV_FLAG_WAIT_READ_AUTO)
                 priv->state |= NAV_FLAG_WAIT_READ;
-//            if (current_title > 0 && s->end_pos > 0) {
-//                int title, part;
-//                if (dvdnav_current_title_info(priv->dvdnav, &title, &part) == DVDNAV_STATUS_OK) {
-//                    if (parts.count() > 0 && current_chapter != part) {
-//                        if (current_chapter_index >= parts.count()) {
-//                            priv->state |= NAV_FLAG_EOF;
-//                            return 0;
-//                        }
-//                        else {
-//                            current_chapter = parts.at(current_chapter_index);
-//                            ++current_chapter_index;
-//                            if (dvdnav_part_search(priv->dvdnav, current_chapter) != DVDNAV_STATUS_OK) {
-//                                qDebug("Couldn't select title %d, part %d, error '%s'\n", current_title, current_chapter, dvdnav_err_to_string(priv->dvdnav));
-//                                priv->state |= NAV_FLAG_EOF;
-//                                return 0;
-//                            }
-//                        }
-//                    }
-//                }
-//            }
-            //No matter for now
-            //if (started && current_cell == ev->cellN) {
-            //    priv->state |= NAV_FLAG_EOF;
-            //    return 0;
-            //}
-            //current_cell = ev->cellN;
             dvdnav_get_highlight(priv, 1);
             break;
         }
@@ -890,13 +865,12 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
 int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
 {
     int event = 0;
+    int ret;
 
     if (!s->end_pos) {
         update_title_len(s);
     }
     while (1) {
-        int ret;
-
         if (stopped) {
             return AVERROR_EOF;
         }
@@ -905,20 +879,19 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
             return AVERROR_EOF;
         }
         switch (event) {
-        case DVDNAV_BLOCK_OK: {
+        case DVDNAV_NAV_PACKET:
+        case DVDNAV_BLOCK_OK:
             return ret;
-        }
         case DVDNAV_VTS_CHANGE: {
             int32_t title, cur_part;
             dvdnav_current_title_info(priv->dvdnav, &title, &cur_part);
 
-            if (current_title && title != current_title) {
+            if (started && current_title && title != current_title) {
                 // Transition to another title signals that we are done.
                 qDebug("vts change, found next title %d to %d\n", current_title, title);
                 stopped = true;
                 return AVERROR_EOF;
             }
-            current_title = title;
             break;
         }
         case DVDNAV_CELL_CHANGE: {
@@ -984,7 +957,7 @@ int DVDNavIOPrivate::get_block(uint8_t *buf, int *event)
                 qDebug("sector search error : %s\n", dvdnav_err_to_string(priv->dvdnav));
             }
             ++error_count;
-            if (error_count > 500) {
+            if (error_count > 200) {
                 qDebug("Too many consecutive read errors!\n");
                 return -1;
             }
@@ -1015,6 +988,7 @@ int DVDNavIOPrivate::get_block(uint8_t *buf, int *event)
             break;
         }
         case DVDNAV_NAV_PACKET: {
+            return len;
             pci_t *pci;
             if (skip_nav_pack) {
                 break;
@@ -1127,24 +1101,13 @@ int DVDNavIOPrivate::dvdnav_first_play()
 {
     current_chapter_index = 0;
     if (current_title > 0) {
-//        if (parts.isEmpty()) {
-            if (dvdnav_title_play(priv->dvdnav, current_title) != DVDNAV_STATUS_OK) {
-                qDebug("dvdnav_stream, couldn't select title %d, error '%s'\n", current_title, dvdnav_err_to_string(priv->dvdnav));
-                stream_dvdnav_close();
-                dvd_stream = NULL;
-                return STREAM_UNSUPPORTED;
-            }
-            qDebug("ID_DVD_CURRENT_TITLE=%d\n", current_title);
-//        }
-//        else {
-//            current_chapter = parts[current_chapter_index];
-//            if (dvdnav_part_play(priv->dvdnav, current_title, current_chapter) != DVDNAV_STATUS_OK) {
-//                qDebug("dvdnav_stream, couldn't select title %d, part %d, error '%s'\n", current_title, current_chapter, dvdnav_err_to_string(priv->dvdnav));
-//                stream_dvdnav_close(dvd_stream);
-//                dvd_stream = NULL;
-//                return STREAM_UNSUPPORTED;
-//            }
-//        }
+        if (dvdnav_title_play(priv->dvdnav, current_title) != DVDNAV_STATUS_OK) {
+            qDebug("dvdnav_stream, couldn't select title %d, error '%s'\n", current_title, dvdnav_err_to_string(priv->dvdnav));
+            stream_dvdnav_close();
+            dvd_stream = NULL;
+            return STREAM_UNSUPPORTED;
+        }
+        qDebug("ID_DVD_CURRENT_TITLE=%d\n", current_title);
     }
     else if (current_title == 0) {
         if (dvdnav_menu_call(priv->dvdnav, DVD_MENU_Root) != DVDNAV_STATUS_OK)
@@ -1170,6 +1133,8 @@ void DVDNavIOPrivate::update_title_len(stream_t *s)
 int64_t DVDNavIOPrivate::update_current_time()
 {
     int64_t time = dvdnav_get_current_time(priv->dvdnav) / 90.0f;
+    if (time < 0)
+        return current_time;
     time -= current_start_time;
     if (time != current_time) {
         current_time = time;
@@ -1299,6 +1264,8 @@ int DVDNavIOPrivate::stream_dvdnav_open(const char *file)
 
 void DVDNavIOPrivate::stream_dvdnav_close()
 {
+    priv->duration = 0;
+    priv->state |= NAV_FLAG_EOF;
     if (dvd_stream) {
         delete dvd_stream;
         dvd_stream = NULL;
@@ -1321,10 +1288,17 @@ void DVDNavIOPrivate::stream_dvdnav_get_time()
 {
     uint64_t *parts = NULL, duration = 0;
     uint32_t n, i;
+    qint64 title_duration;
+
     n = dvdnav_describe_title_chapters(priv->dvdnav, current_title, &parts, &duration);
     if (parts) {
-        current_duration = duration / 90;
-        current_duration *= 1000;
+        title_duration = duration / 90;
+        title_duration *= 1000;
+    }
+    if (priv->duration > 0) {
+        current_duration = (qint64)priv->duration * 1000;
+    } else {
+        current_duration = title_duration;
     }
 }
 
