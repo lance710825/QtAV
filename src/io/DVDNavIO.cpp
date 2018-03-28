@@ -1264,13 +1264,13 @@ int DVDNavIOPrivate::stream_dvdnav_open(const char *file)
 
 void DVDNavIOPrivate::stream_dvdnav_close()
 {
-    priv->duration = 0;
-    priv->state |= NAV_FLAG_EOF;
     if (dvd_stream) {
         delete dvd_stream;
         dvd_stream = NULL;
     }
     if (priv) {
+        priv->duration = 0;
+        priv->state |= NAV_FLAG_EOF;
         if (priv->dvdnav) dvdnav_close(priv->dvdnav);
         delete priv;
         priv = NULL;
