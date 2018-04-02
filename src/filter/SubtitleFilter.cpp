@@ -193,6 +193,23 @@ void SubtitleFilter::process(Statistics *statistics, VideoFrame *frame)
         int video_frame_height = d.player_sub->subtitle()->statistics().video_only.height;
         int video_render_width = context()->paint_device->width();
         int video_render_height = context()->paint_device->height();
+
+        /*Avoid pic-based subtitle from being displayed out off screen.*/
+        float ratio = video_render_width * 1.0 / video_frame_height;
+        int temp_width, temp_height;
+        if (ratio > 0) {
+            float ratioW = 1.0, ratioH = 1.0;
+            if (rect.x() + rect.width() > video_frame_width) {
+                ratioW = (rect.x() + rect.width()) * 1.0 / video_frame_width;
+            }
+            if (rect.y() + rect.height() > video_frame_height) {
+                ratioH = (rect.y() + rect.height()) * 1.0 / video_frame_height;
+            }
+            if (ratioW > 1.0 || ratioH > 1.0) {
+                img = img.scaled(img.width() / qMax(ratioW, ratioH), img.height() / qMax(ratioW, ratioH));
+                pos = QPoint((video_frame_width - img.width()) / 2, pos.y() / qMax(ratioW, ratioH));
+            }
+        }
         if (context()->paint_device->height() > 0) {
             float ratioW = video_frame_width * 1.0 / video_render_width;
             float ratioH = video_frame_height * 1.0 / video_render_height;
