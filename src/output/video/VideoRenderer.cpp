@@ -84,7 +84,7 @@ void VideoRenderer::setFilterOptions(const QString &filters)
     m_videoFilter->setOptions(filters);
 }
 
-bool VideoRenderer::receive(const VideoFrame &frame)
+bool VideoRenderer::receive(VideoFrame &frame)
 {
     DPTR_D(VideoRenderer);
     const qreal dar_old = d.source_aspect_ratio;
@@ -92,13 +92,12 @@ bool VideoRenderer::receive(const VideoFrame &frame)
     if (dar_old != d.source_aspect_ratio)
         sourceAspectRatioChanged(d.source_aspect_ratio);
     setInSize(frame.width(), frame.height());
-    VideoFrame tempframe = frame.clone();
-    if (m_videoFilter->isEnabled() && m_videoFilter->prepareContext(m_filterContext, tempframe.statistics, &tempframe)) {
-        m_videoFilter->apply(frame.statistics, &tempframe);
+    if (m_videoFilter->isEnabled() && m_videoFilter->prepareContext(m_filterContext, frame.statistics, &frame)) {
+        m_videoFilter->apply(frame.statistics, &frame);
     }
     QMutexLocker locker(&d.img_mutex);
     Q_UNUSED(locker); //TODO: double buffer for display/dec frame to avoid mutex
-    return receiveFrame(tempframe);
+    return receiveFrame(frame);
 }
 
 bool VideoRenderer::setPreferredPixelFormat(VideoFormat::PixelFormat pixfmt)

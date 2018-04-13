@@ -55,7 +55,7 @@ QList<AVOutput *> OutputSet::outputs()
     return mOutputs;
 }
 
-void OutputSet::sendVideoFrame(const VideoFrame &frame)
+void OutputSet::sendVideoFrame(VideoFrame &frame)
 {
     if (mOutputs.isEmpty())
         return;

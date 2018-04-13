@@ -85,7 +85,7 @@ public:
     virtual ~VideoRenderer();
     virtual VideoRendererId id() const = 0;
 
-    bool receive(const VideoFrame& frame);
+    bool receive(VideoFrame& frame);
     /*!
      * \brief setPreferredPixelFormat
      * \param pixfmt

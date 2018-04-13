@@ -50,7 +50,7 @@ public:
     //each(OutputOperation(data))
     //
     void sendData(const QByteArray& data);
-    void sendVideoFrame(const VideoFrame& frame);
+    void sendVideoFrame(VideoFrame& frame);
 
     void clearOutputs();
     void addOutput(AVOutput* output);
