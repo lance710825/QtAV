@@ -132,6 +132,14 @@ static int toPaSampleFormat(AudioFormat::SampleFormat format)
 //TODO: call open after audio format changed?
 bool AudioOutputPortAudio::open()
 {
+    if (!initialized) {
+        PaError err = paNoError;
+        if ((err = Pa_Initialize()) != paNoError) {
+            qWarning("Error when init portaudio: %s", Pa_GetErrorText(err));
+            return false;
+        }
+        initialized = true;
+    }
     outputParameters->sampleFormat = toPaSampleFormat(format.sampleFormat());
     outputParameters->channelCount = format.channels();
     PaError err = Pa_OpenStream(&stream, NULL, outputParameters, format.sampleRate(), 0, paNoFlag, NULL, NULL);
@@ -146,6 +154,10 @@ bool AudioOutputPortAudio::open()
 bool AudioOutputPortAudio::close()
 {
     if (!stream) {
+        if (initialized) {
+            initialized = false;
+            Pa_Terminate();
+        }
         return true;
     }
     PaError err = Pa_StopStream(stream); //may be already stopped: paStreamIsStopped
@@ -155,12 +167,18 @@ bool AudioOutputPortAudio::close()
     }
     err = Pa_CloseStream(stream);
     if (err != paNoError) {
+        if (initialized) {
+            initialized = false;
+            Pa_Terminate();
+        }
         qWarning("Close portaudio stream error: %s", Pa_GetErrorText(err));
         return false;
     }
     stream = NULL;
-    if (initialized)
+    if (initialized) {
+        initialized = false;
         Pa_Terminate(); //Do NOT call this if init failed. See document
+    }
     return true;
 }
 } //namespace QtAV
