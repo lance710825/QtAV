@@ -31,6 +31,9 @@ QStringList AudioOutputBackend::defaultPriority()
 #ifdef Q_OS_MAC
             << QStringLiteral("AudioToolbox")
 #endif
+#if QTAV_HAVE(PORTAUDIO)
+            << QStringLiteral("PortAudio")
+#endif
 #if QTAV_HAVE(XAUDIO2)
             << QStringLiteral("XAudio2")
 #endif
@@ -39,9 +42,6 @@ QStringList AudioOutputBackend::defaultPriority()
 #endif
 #if QTAV_HAVE(OPENAL)
             << QStringLiteral("OpenAL")
-#endif
-#if QTAV_HAVE(PORTAUDIO)
-            << QStringLiteral("PortAudio")
 #endif
 #if QTAV_HAVE(PULSEAUDIO)&& !defined(Q_OS_MAC)
             << QStringLiteral("Pulse")
