@@ -809,6 +809,10 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
                     priv->state |= NAV_FLAG_EOF;
                     return 0;
                 }
+                /*Fix bug, some iso's title switch to 0 2018-05-31*/
+                if (tit == 0) {
+                    dvdnav_title_play(priv->dvdnav, current_title);
+                }
             }
             break;
         }
