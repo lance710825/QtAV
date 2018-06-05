@@ -235,6 +235,7 @@ public:
         audio_streams.clear();
         video_streams.clear();
         subtitle_streams.clear();
+        audio_ids.clear();
     }
     void checkNetwork() {
         // FIXME: is there a good way to check network? now use URLContext.flags == URL_PROTOCOL_FLAG_NETWORK
@@ -287,6 +288,7 @@ public:
     Packet pkt;
     int stream;
     QList<int> audio_streams, video_streams, subtitle_streams;
+    QList<int> audio_ids;   //deal only for audio 2018-06-05
     AVFormatContext *format_ctx;
     //copy the info, not parse the file when constructed, then need member vars
     QString file;
@@ -491,19 +493,25 @@ bool AVDemuxer::readFrame()
         if (d->stream >= 0 && d->stream < d->format_ctx->nb_streams) {
             AVMediaType type = d->format_ctx->streams[d->stream]->codec->codec_type;
             if (type == AVMEDIA_TYPE_VIDEO) {
-                d->video_streams.push_back(d->stream);
-                Q_EMIT newStreamFound(VideoStream, d->stream);
+                if (!d->video_streams.contains(d->stream)) {
+                    d->video_streams.push_back(d->stream);
+                    Q_EMIT newStreamFound(VideoStream, d->stream);
+                }
             }
             else if (type == AVMEDIA_TYPE_AUDIO) {
-                d->audio_streams.push_back(d->stream);
-                Q_EMIT newStreamFound(AudioStream, d->stream);
+                if (!d->audio_streams.contains(d->stream)) {
+                    d->audio_streams.push_back(d->stream);
+                    Q_EMIT newStreamFound(AudioStream, d->stream);
+                }
             }
             else if (type == AVMEDIA_TYPE_SUBTITLE) {
-                d->subtitle_streams.push_back(d->stream);
-                qSort(d->subtitle_streams.begin(), d->subtitle_streams.end(), [this](const int &a, const int &b) {
-                    return d->format_ctx->streams[a]->id < d->format_ctx->streams[b]->id;
-                });
-                Q_EMIT newStreamFound(SubtitleStream, d->stream);
+                if (!d->subtitle_streams.contains(d->stream)) {
+                    d->subtitle_streams.push_back(d->stream);
+                    qSort(d->subtitle_streams.begin(), d->subtitle_streams.end(), [this](const int &a, const int &b) {
+                        return d->format_ctx->streams[a]->id < d->format_ctx->streams[b]->id;
+                    });
+                    Q_EMIT newStreamFound(SubtitleStream, d->stream);
+                }
             }
         }
         //d->setStream(AVDemuxer::SubtitleStream, d->stream);
@@ -960,6 +968,15 @@ bool AVDemuxer::hasAttacedPicture() const
 
 bool AVDemuxer::setStreamIndex(StreamType st, int index)
 {
+    //deal for dvd audio 2018-06-05
+    if (index >= 0x80) {
+        for (int i = 0; i < d->audio_ids.count(); ++i) {
+            if (d->audio_ids.at(i) == index) {
+                index = i;
+                break;
+            }
+        }
+    }
     QList<int> *streams = 0;
     Private::StreamInfo *si = 0;
     if (st == AudioStream) { // TODO: use a struct
@@ -1380,6 +1397,7 @@ bool AVDemuxer::Private::prepareStreams()
             video_streams.push_back(i);
         } else if (type == AVMEDIA_TYPE_AUDIO) {
             audio_streams.push_back(i);
+            audio_ids.push_back(format_ctx->streams[i]->id);
         } else if (type == AVMEDIA_TYPE_SUBTITLE) {
             subtitle_streams.push_back(i);
         }
