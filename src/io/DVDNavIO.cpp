@@ -90,20 +90,6 @@ typedef struct stream {
     char* url;  // strdup() of filename/url
 } stream_t;
 
-typedef enum {
-    NAV_FLAG_EOF                  = 1 << 0,  /* end of stream has been reached */
-    NAV_FLAG_WAIT                 = 1 << 1,  /* wait event */
-    NAV_FLAG_WAIT_SKIP            = 1 << 2,  /* wait skip disable */
-    NAV_FLAG_CELL_CHANGE          = 1 << 3,  /* cell change event */
-    NAV_FLAG_WAIT_READ_AUTO       = 1 << 4,  /* wait read auto mode */
-    NAV_FLAG_WAIT_READ            = 1 << 5,  /* suspend read from stream */
-    NAV_FLAG_VTS_DOMAIN           = 1 << 6,  /* vts domain */
-    NAV_FLAG_SPU_SET              = 1 << 7,  /* spu_clut is valid */
-    NAV_FLAG_STREAM_CHANGE        = 1 << 8,  /* title, chapter, audio or SPU */
-    NAV_FLAG_AUDIO_CHANGE         = 1 << 9,  /* audio stream change event */
-    NAV_FLAG_SPU_CHANGE           = 1 << 10, /* spu stream change event */
-} dvdnav_state_t;
-
 typedef struct {
     dvdnav_t *       dvdnav;              /* handle to libdvdnav stuff */
     unsigned int     duration;            /* in milliseconds */
@@ -115,17 +101,6 @@ typedef struct {
     unsigned int     state;
 } dvdnav_priv_t;
 
-typedef struct {
-    uint16_t sx, sy;
-    uint16_t ex, ey;
-    uint32_t palette;
-} nav_highlight_t;
-
-enum stream_ctrl_type {
-    stream_ctrl_audio,
-    stream_ctrl_sub
-};
-
 enum file_system {
     AUTO = 0,
     UDF,
@@ -136,12 +111,6 @@ static bool compareParts(int part1, int part2)
 {
     return part1 < part2;
 }
-
-struct stream_lang_req {
-    enum stream_ctrl_type type;
-    int id;
-    char buf[40];
-};
 
 class DVDNavIO : public MediaIO
 {
@@ -204,10 +173,8 @@ public:
         custom_duration(0),
         current_cell(0),
         file_sys(UDF),
-        nb_of_chapter(0),
-        cur_chapter_index(0),
         skip_nav_pack(false),
-        stopped(false)
+        stopped(true)
     {
 
     }
@@ -218,7 +185,6 @@ public:
     int  stream_dvdnav_open(const char *filename);
     int  stream_dvdnav_read(stream_t *s, char *but, int len);
     bool stream_dvdnav_seek(stream_t *s, int64_t newpos);
-    int  stream_dvdnav_control(stream_t *stream, int cmd, void* arg);
     void stream_dvdnav_close();
     void stream_dvdnav_get_time();
     int64_t update_current_time();
@@ -242,23 +208,16 @@ public:
     int error_count;
     int clock_flag;
 
-    int nb_of_chapter;
-    int cur_chapter_index;
     bool skip_nav_pack;
     bool stopped;
 
 private:
     stream_t* new_stream(int fd,int type);
-    int  get_block(uint8_t *buf, int *event);
     int  dvdnav_first_play();
-    void dvdnav_get_highlight(dvdnav_priv_t *priv, int display_mode);
     int  dvdnav_get_duration(int length);
     int  dvdnav_stream_read(dvdnav_priv_t * priv, unsigned char *buf, int *len);
     void update_title_len(stream_t *stream);
     int  dvdtimetomsec(dvd_time_t *dt);
-    void show_audio_subs_languages(dvdnav_t *nav);
-    int  dvdnav_lang_from_aid(int aid);
-    int  dvdnav_lang_from_sid(int sid);
 };
 
 DVDNavIO::DVDNavIO() : MediaIO(*new DVDNavIOPrivate()) {}
@@ -348,7 +307,7 @@ qint64 DVDNavIO::clock()
 
     if (!d.dvd_stream || !d.priv)
         return 0;
-    if (d.priv && (d.priv->state & NAV_FLAG_EOF)) {
+    if (d.priv && d.stopped) {
         return d.current_duration / 1000;
     }
     time = d.update_current_time();
@@ -431,47 +390,7 @@ stream_t* DVDNavIOPrivate::new_stream(int fd, int type)
         s->buf_pos=s->buf_len=0;
         s->eof=0;
     }
-    stream_dvdnav_control(s, STREAM_CTRL_RESET, NULL);
-    //stream_seek(s,0);
     return s;
-}
-
-void DVDNavIOPrivate::dvdnav_get_highlight(dvdnav_priv_t *priv, int display_mode)
-{
-    pci_t *pnavpci = NULL;
-    dvdnav_highlight_event_t *hlev = &(priv->hlev);
-    uint32_t btnum;
-
-    if (!priv || !priv->dvdnav)
-        return;
-
-    pnavpci = dvdnav_get_current_nav_pci (priv->dvdnav);
-    if (!pnavpci)
-        return;
-
-    dvdnav_get_current_highlight (priv->dvdnav, (int32_t *)&(hlev->buttonN) );
-    hlev->display = display_mode; /* show */
-
-    if (hlev->buttonN > 0 && pnavpci->hli.hl_gi.btn_ns > 0 && hlev->display) {
-        for (btnum = 0; btnum < pnavpci->hli.hl_gi.btn_ns; btnum++) {
-            btni_t *btni = &(pnavpci->hli.btnit[btnum]);
-
-            if (hlev->buttonN == btnum + 1) {
-                hlev->sx = FFMin (btni->x_start, btni->x_end);
-                hlev->ex = FFMax (btni->x_start, btni->x_end);
-                hlev->sy = FFMin (btni->y_start, btni->y_end);
-                hlev->ey = FFMax (btni->y_start, btni->y_end);
-
-                hlev->palette = (btni->btn_coln == 0) ? 0 :
-                                                        pnavpci->hli.btn_colit.btn_coli[btni->btn_coln - 1][0];
-                break;
-            }
-        }
-    } else { /* hide button or no button */
-        hlev->sx = hlev->ex = 0;
-        hlev->sy = hlev->ey = 0;
-        hlev->palette = hlev->buttonN = 0;
-    }
 }
 
 int DVDNavIOPrivate::dvdnav_get_duration(int length)
@@ -491,214 +410,6 @@ int DVDNavIOPrivate::dvdtimetomsec(dvd_time_t *dt)
     return msec;
 }
 
-void DVDNavIOPrivate::show_audio_subs_languages(dvdnav_t *nav)
-{
-    uint8_t lg;
-    uint16_t i, lang, format, id, channels;
-    int base[7] = {128, 0, 0, 0, 160, 136, 0};
-    for(i=0; i<8; i++)
-    {
-        char tmp[] = "unknown";
-        lg = dvdnav_get_audio_logical_stream(nav, i);
-        if(lg == 0xff) continue;
-        channels = dvdnav_audio_stream_channels(nav, lg);
-        if(channels == 0xFFFF)
-            channels = 2; //unknown
-        else
-            channels--;
-        lang = dvdnav_audio_stream_to_lang(nav, lg);
-        if(lang != 0xFFFF)
-        {
-            tmp[0] = lang >> 8;
-            tmp[1] = lang & 0xFF;
-            tmp[2] = 0;
-        }
-        format = dvdnav_audio_stream_format(nav, lg);
-        if(format == 0xFFFF || format > 6)
-            format = 1; //unknown
-        id = i + base[format];
-        qDebug("audio stream: %d format: %s (%s) language: %s aid: %d.\n", i,
-               dvd_audio_stream_types[format], dvd_audio_stream_channels[channels], tmp, id);
-        if (lang != 0xFFFF && lang && tmp[0])
-            qDebug("ID_AID_%d_LANG=%s\n", id, tmp);
-    }
-
-    for(i=0; i<32; i++)
-    {
-        char tmp[] = "unknown";
-        lg = dvdnav_get_spu_logical_stream(nav, i);
-        if(lg == 0xff) continue;
-        lang = dvdnav_spu_stream_to_lang(nav, i);
-        if(lang != 0xFFFF)
-        {
-            tmp[0] = lang >> 8;
-            tmp[1] = lang & 0xFF;
-            tmp[2] = 0;
-        }
-        qDebug("subtitle ( sid ): %d language: %s\n", lg, tmp);
-        if (lang != 0xFFFF && lang && tmp[0])
-            qDebug("ID_SID_%d_LANG=%s\n", lg, tmp);
-    }
-}
-
-/**
- * \brief mp_dvdnav_lang_from_aid() returns the language corresponding to audio id 'aid'
- * \param stream: - stream pointer
- * \param sid: physical subtitle id
- * \return 0 on error, otherwise language id
- */
-int DVDNavIOPrivate::dvdnav_lang_from_aid(int aid)
-{
-    uint8_t lg;
-    uint16_t lang;
-
-    if(aid < 0)
-        return 0;
-    lg = dvdnav_get_audio_logical_stream(priv->dvdnav, aid & 0x7);
-    if(lg == 0xff) return 0;
-    lang = dvdnav_audio_stream_to_lang(priv->dvdnav, lg);
-    if(lang == 0xffff) return 0;
-    return lang;
-}
-/**
- * \brief mp_dvdnav_lang_from_sid() returns the language corresponding to subtitle id 'sid'
- * \param stream: - stream pointer
- * \param sid: physical subtitle id
- * \return 0 on error, otherwise language id
- */
-int DVDNavIOPrivate::dvdnav_lang_from_sid(int sid)
-{
-    uint8_t k;
-    uint16_t lang;
-
-    if(sid < 0) return 0;
-    for (k=0; k<32; k++)
-        if (dvdnav_get_spu_logical_stream(priv->dvdnav, k) == sid)
-            break;
-    if (k == 32)
-        return 0;
-    lang = dvdnav_spu_stream_to_lang(priv->dvdnav, k);
-    if(lang == 0xffff) return 0;
-    return lang;
-}
-
-int DVDNavIOPrivate::stream_dvdnav_control(stream_t *stream, int cmd, void* arg)
-{
-    int tit, part;
-
-    switch(cmd)
-    {
-    case STREAM_CTRL_SEEK_TO_CHAPTER:
-    {
-        int chap = *(unsigned int *)arg+1;
-
-        if(chap < 1 || dvdnav_current_title_info(priv->dvdnav, &tit, &part) != DVDNAV_STATUS_OK)
-            break;
-        if(dvdnav_part_play(priv->dvdnav, tit, chap) != DVDNAV_STATUS_OK)
-            break;
-        return 1;
-    }
-    case STREAM_CTRL_GET_NUM_CHAPTERS:
-    {
-        if(dvdnav_current_title_info(priv->dvdnav, &tit, &part) != DVDNAV_STATUS_OK)
-            break;
-        if(dvdnav_get_number_of_parts(priv->dvdnav, tit, &part) != DVDNAV_STATUS_OK)
-            break;
-        if(!part)
-            break;
-        *(unsigned int *)arg = part;
-        return 1;
-    }
-    case STREAM_CTRL_GET_CURRENT_CHAPTER:
-    {
-        if(dvdnav_current_title_info(priv->dvdnav, &tit, &part) != DVDNAV_STATUS_OK)
-            break;
-        *(unsigned int *)arg = part - 1;
-        return 1;
-    }
-    case STREAM_CTRL_GET_TIME_LENGTH:
-    {
-        if(priv->duration || priv->still_length)
-        {
-            *(double *)arg = (double)priv->duration / 1000.0;
-            return 1;
-        }
-        break;
-    }
-    case STREAM_CTRL_GET_ASPECT_RATIO:
-    {
-        uint8_t ar = dvdnav_get_video_aspect(priv->dvdnav);
-        *(double *)arg = !ar ? 4.0/3.0 : 16.0/9.0;
-        return 1;
-    }
-    case STREAM_CTRL_GET_CURRENT_TIME:
-    {
-        double tm;
-        tm = dvdnav_get_current_time(priv->dvdnav)/90000.0f;
-        if(tm != -1)
-        {
-            *(double *)arg = tm;
-            return 1;
-        }
-        break;
-    }
-    case STREAM_CTRL_SEEK_TO_TIME:
-    {
-        uint64_t tm = *(double *)arg * 90000;
-        if(dvdnav_time_search(priv->dvdnav, tm) == DVDNAV_STATUS_OK)
-            return 1;
-        break;
-    }
-    case STREAM_CTRL_GET_NUM_ANGLES:
-    {
-        int32_t curr, angles;
-        if(dvdnav_get_angle_info(priv->dvdnav, &curr, &angles) != DVDNAV_STATUS_OK)
-            break;
-        *(int *)arg = angles;
-        return 1;
-    }
-    case STREAM_CTRL_GET_ANGLE:
-    {
-        int32_t curr, angles;
-        if(dvdnav_get_angle_info(priv->dvdnav, &curr, &angles) != DVDNAV_STATUS_OK)
-            break;
-        *(int *)arg = curr;
-        return 1;
-    }
-    case STREAM_CTRL_SET_ANGLE:
-    {
-        int32_t curr, angles;
-        int new_angle = *(int *)arg;
-        if(dvdnav_get_angle_info(priv->dvdnav, &curr, &angles) != DVDNAV_STATUS_OK)
-            break;
-        if(new_angle>angles || new_angle<1)
-            break;
-        if(dvdnav_angle_change(priv->dvdnav, new_angle) != DVDNAV_STATUS_OK)
-            return 1;
-    }
-    case STREAM_CTRL_GET_LANG:
-    {
-        struct stream_lang_req *req = (stream_lang_req *)arg;
-        int lang = 0;
-        switch(req->type) {
-        case stream_ctrl_audio:
-            lang = dvdnav_lang_from_aid(req->id);
-            break;
-        case stream_ctrl_sub:
-            lang = dvdnav_lang_from_sid(req->id);
-            break;
-        }
-        if (!lang)
-            break;
-        req->buf[0] = lang >> 8;
-        req->buf[1] = lang;
-        req->buf[2] = 0;
-        return STREAM_OK;
-    }
-    }
-
-    return STREAM_UNSUPPORTED;
-}
 int DVDNavIOPrivate::dvdnav_stream_read(dvdnav_priv_t * priv, unsigned char *buf, int *len)
 {
     int event = DVDNAV_NOP;
@@ -716,33 +427,26 @@ int DVDNavIOPrivate::dvdnav_stream_read(dvdnav_priv_t * priv, unsigned char *buf
     return event;
 }
 
-#if 1
 int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
 {
     int event;
 
-    if (current_title > 0 && (priv->state & NAV_FLAG_EOF))
+    if (current_title > 0 && stopped)
         return 0;
-    if (priv->state & NAV_FLAG_WAIT_READ) /* read is suspended */
-        return -1;
     len = 0;
     if (!s->end_pos)
         update_title_len(s);
     error_count = 0;
     while (!len) /* grab all event until DVDNAV_BLOCK_OK (len=2048), DVDNAV_STOP or DVDNAV_STILL_FRAME */
     {
-        if (error_count >= 100) {
+        if (error_count >= 500) {
             qDebug() << "Too many consecutive errors read!\n";
             return 0;
         }
         event = dvdnav_stream_read(priv, (unsigned char*)buf, &len);
-        if (event == -1 || len == -1)
-        {
+        if (event == -1 || len == -1) {
             qDebug("DVDNAV stream read error!\n");
             return 0;
-        }
-        if (event != DVDNAV_BLOCK_OK) {
-            dvdnav_get_highlight(priv, 1);
         }
         switch (event) {
         case DVDNAV_STILL_FRAME: {
@@ -758,245 +462,19 @@ int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
             break;
         }
         case DVDNAV_HIGHLIGHT: {
-            dvdnav_get_highlight(priv, 1);
+            qDebug("DVDNAV_HIGHLIGHT");
             break;
         }
         case DVDNAV_SPU_CLUT_CHANGE: {
             memcpy(priv->spu_clut, buf, 16 * sizeof(unsigned int));
-            priv->state |= NAV_FLAG_SPU_SET;
             break;
         }
         case DVDNAV_STOP: {
-            priv->state |= NAV_FLAG_EOF;
-            return len;
-        }
-        case DVDNAV_NAV_PACKET:
-            break;
-        case DVDNAV_BLOCK_OK:
-            return len;
-        case DVDNAV_WAIT: {
-            if ((priv->state & NAV_FLAG_WAIT_SKIP) &&
-                (priv->state & NAV_FLAG_WAIT))
-                dvdnav_wait_skip(priv->dvdnav);
-            else {
-                priv->state |= NAV_FLAG_WAIT_SKIP;
-                priv->state |= NAV_FLAG_WAIT;
-            }
-            if (priv->state & NAV_FLAG_WAIT)
-                return len;
-            break;
-        }
-        case DVDNAV_VTS_CHANGE: {
-            int tit = 0, part = 0;
-            current_cell = 0;
-            dvdnav_vts_change_event_t *vts_event = (dvdnav_vts_change_event_t *)buf;
-            qDebug("DVDNAV, switched to title: %d\r\n", vts_event->new_vtsN);
-            priv->state |= NAV_FLAG_CELL_CHANGE;
-            priv->state |= NAV_FLAG_AUDIO_CHANGE;
-            priv->state |= NAV_FLAG_SPU_CHANGE;
-            priv->state |= NAV_FLAG_STREAM_CHANGE;
-            priv->state &= ~NAV_FLAG_WAIT_SKIP;
-            priv->state &= ~NAV_FLAG_WAIT;
-            s->end_pos = 0;
-            update_title_len(s);
-            show_audio_subs_languages(priv->dvdnav);
-            if (priv->state & NAV_FLAG_WAIT_READ_AUTO)
-                priv->state |= NAV_FLAG_WAIT_READ;
-            if (dvdnav_current_title_info(priv->dvdnav, &tit, &part) == DVDNAV_STATUS_OK) {
-                qDebug("DVDNAV, NEW TITLE %d.", tit);
-                dvdnav_get_highlight(priv, 0);
-                if (started && current_title > 0 && tit != current_title) {
-                    priv->state |= NAV_FLAG_EOF;
-                    return 0;
-                }
-                /*Fix bug, some iso's title switch to 0 2018-05-31*/
-                if (tit == 0) {
-                    dvdnav_title_play(priv->dvdnav, current_title);
-                }
-            }
-            break;
-        }
-        case DVDNAV_CELL_CHANGE: {
-            dvdnav_cell_change_event_t *ev = (dvdnav_cell_change_event_t*)buf;
-            uint32_t nextstill;
-
-            priv->state &= ~NAV_FLAG_WAIT_SKIP;
-            priv->state |= NAV_FLAG_STREAM_CHANGE;
-            if (ev->pgc_length)
-                priv->duration = ev->pgc_length / 90;
-
-            if (dvdnav_is_domain_vts(priv->dvdnav)) {
-                qDebug("DVDNAV_TITLE_IS_MOVIE\n");
-                priv->state &= ~NAV_FLAG_VTS_DOMAIN;
-            }
-            else {
-                qDebug("DVDNAV_TITLE_IS_MENU\n");
-                priv->state |= NAV_FLAG_VTS_DOMAIN;
-            }
-
-            nextstill = dvdnav_get_next_still_flag(priv->dvdnav);
-            if (nextstill) {
-                priv->duration = dvdnav_get_duration(nextstill);
-                priv->still_length = nextstill;
-                if (priv->still_length <= 1) {
-                    pci_t *pnavpci = dvdnav_get_current_nav_pci(priv->dvdnav);
-                    priv->duration = dvdtimetomsec(&pnavpci->pci_gi.e_eltm);
-                }
-            }
-
-            priv->state |= NAV_FLAG_CELL_CHANGE;
-            priv->state |= NAV_FLAG_AUDIO_CHANGE;
-            priv->state |= NAV_FLAG_SPU_CHANGE;
-            priv->state &= ~NAV_FLAG_WAIT_SKIP;
-            priv->state &= ~NAV_FLAG_WAIT;
-            if (priv->state & NAV_FLAG_WAIT_READ_AUTO)
-                priv->state |= NAV_FLAG_WAIT_READ;
-            dvdnav_get_highlight(priv, 1);
-            break;
-        }
-        case DVDNAV_AUDIO_STREAM_CHANGE:
-            priv->state |= NAV_FLAG_AUDIO_CHANGE;
-            break;
-        case DVDNAV_SPU_STREAM_CHANGE:
-            priv->state |= NAV_FLAG_SPU_CHANGE;
-            priv->state |= NAV_FLAG_STREAM_CHANGE;
-            break;
-        }
-    }
-    return len;
-}
-#else
-int DVDNavIOPrivate::stream_dvdnav_read(stream_t *s, char *buf, int len)
-{
-    int event = 0;
-    int ret;
-
-    if (!s->end_pos) {
-        update_title_len(s);
-    }
-    while (1) {
-        if (stopped) {
-            return AVERROR_EOF;
-        }
-        ret = get_block((uint8_t*)buf, &event);
-        if (ret < 0) {
-            return AVERROR_EOF;
-        }
-        switch (event) {
-        case DVDNAV_NAV_PACKET:
-        case DVDNAV_BLOCK_OK:
-            return ret;
-        case DVDNAV_VTS_CHANGE: {
-            int32_t title, cur_part;
-            dvdnav_current_title_info(priv->dvdnav, &title, &cur_part);
-
-            if (started && current_title && title != current_title) {
-                // Transition to another title signals that we are done.
-                qDebug("vts change, found next title %d to %d\n", current_title, title);
-                stopped = true;
-                return AVERROR_EOF;
-            }
-            break;
-        }
-        case DVDNAV_CELL_CHANGE: {
-            dvdnav_cell_change_event_t * cell_event;
-            cell_event = (dvdnav_cell_change_event_t*)buf;
-
-            if (nb_of_chapter > 0) {
-                if (nb_of_chapter <= cur_chapter_index) {
-                    stopped = 1;
-                    return AVERROR_EOF;
-                }
-                else {
-                    if (cell_event->pgN != parts[cur_chapter_index]) {
-                        cur_chapter_index++;
-                        if (nb_of_chapter <= cur_chapter_index) {
-                            stopped = true;
-                            return AVERROR_EOF;
-                        }
-                        dvdnav_reset(priv->dvdnav);
-                        if (dvdnav_part_play(priv->dvdnav, priv->title, parts[cur_chapter_index]) != DVDNAV_STATUS_OK) {
-                            qDebug("dvdnav_part_play: %s\n", dvdnav_err_to_string(priv->dvdnav));
-                            stopped = 1;
-                            return AVERROR_EOF;
-                        }
-                    }
-                }
-            }
-            break;
-        }
-        case DVDNAV_STOP:
             stopped = true;
-            qDebug("dvdnav: stop\n");
-            return AVERROR_EOF;
-        default:
-            break;
-        }
-    }
-    return 0;
-}
-#endif
-
-bool DVDNavIOPrivate::stream_dvdnav_seek(stream_t *s, int64_t newpos)
-{
-    uint32_t sector = 0;
-
-    if (s->end_pos && newpos > s->end_pos)
-        newpos = s->end_pos;
-    sector = newpos / 2048ULL;
-    if (dvdnav_sector_search(priv->dvdnav, (uint64_t)sector, SEEK_SET) != DVDNAV_STATUS_OK)
-        return false;
-    s->pos = newpos;
-    return true;
-}
-
-// 对DVD读取的一个包装，屏蔽了大部分不需要的事件。
-int DVDNavIOPrivate::get_block(uint8_t *buf, int *event) 
-{
-    int len = 0, error_count = 0;
-
-    while (!stopped) {
-        if (dvdnav_get_next_block(priv->dvdnav, buf, event, &len) == DVDNAV_STATUS_ERR) {
-            if (dvdnav_sector_search(priv->dvdnav, 1, SEEK_CUR) == DVDNAV_STATUS_ERR) {
-                qDebug("sector search error : %s\n", dvdnav_err_to_string(priv->dvdnav));
-            }
-            ++error_count;
-            if (error_count > 200) {
-                qDebug("Too many consecutive read errors!\n");
-                return -1;
-            }
-        }
-        switch (*event) {
-        case DVDNAV_BLOCK_OK:
             return len;
-            break;
-        case DVDNAV_VTS_CHANGE: {
-            dvdnav_vts_change_event_t *vts_change = (dvdnav_vts_change_event_t*)buf;
-            qDebug("DVDNAV_VTS_CHANGE\n");
-            qDebug("\told domain %d vts %d\n", vts_change->old_domain, vts_change->old_vtsN);
-            qDebug("\tnew domain %d vts %d\n", vts_change->new_domain, vts_change->new_vtsN);
-            return len;
-            break;
         }
-        case DVDNAV_CELL_CHANGE: {
-            dvdnav_cell_change_event_t *cell_change = (dvdnav_cell_change_event_t*)buf;
-            qDebug("DVDNAV_CELL_CHANGE\n");
-            qDebug("\tcellN=%d\n", cell_change->cellN);
-            qDebug("\tpgN=%d\n", cell_change->pgN);
-            qDebug("\tcell_start=%lld\n", cell_change->cell_start);
-            qDebug("\tcell_len=%lld\n", cell_change->cell_length);
-            qDebug("\tpg_start=%lld\n", cell_change->pg_start);
-            qDebug("\tpg_len=%lld\n", cell_change->pg_length);
-            qDebug("\tpgc_len=%lld\n", cell_change->pgc_length);
-            return len;
-            break;
-        }
-        case DVDNAV_NAV_PACKET: {
-            return len;
+        case DVDNAV_NAV_PACKET:
             pci_t *pci;
-            if (skip_nav_pack) {
-                break;
-            }
             pci = dvdnav_get_current_nav_pci(priv->dvdnav);
             dvdnav_get_current_nav_dsi(priv->dvdnav);
 
@@ -1033,72 +511,79 @@ int DVDNavIOPrivate::get_block(uint8_t *buf, int *event)
                 }
             }
             break;
-        }
-        case DVDNAV_NOP:
-            qDebug("DVDNAV_NOP\n");
-            break;
-        case DVDNAV_SPU_CLUT_CHANGE: {
-            int i = 0;
-            qDebug("DVDNAV_SPU_CLUT_CHANGE\n");
-            for (i = 0; i < 0x1f; i++) {
-                uint16_t lang = dvdnav_spu_stream_to_lang(priv->dvdnav, i);
-                if (lang != 0xffff) {
-                    qDebug("\tlange id %x %c%c\n", i + 0xdb20, (lang >> 8) & 0x0f, lang & 0x0f);
-                }
-            }
-            break;
-        }
-        case DVDNAV_SPU_STREAM_CHANGE: {
-            int i = 0;
-            qDebug("DVDNAV_SPU_STREAM_CHANGE\n");
-            for (i = 0; i < 0x1f; i++) {
-                uint16_t lang = dvdnav_spu_stream_to_lang(priv->dvdnav, i);
-                if (lang != 0xffff) {
-                    qDebug("\tlange id %x %c%c\n", i + 0xdb20, (lang >> 8) & 0x0f, lang & 0x0f);
-                }
-            }
-            break;
-        }
-        case DVDNAV_AUDIO_STREAM_CHANGE: {
-            dvdnav_audio_stream_change_event_t* audio_change = (dvdnav_audio_stream_change_event_t*)buf;
-            qDebug("DVDNAV_AUDIO_STREAM_CHANGE\n");
-            qDebug("\tphysical=%d\n", audio_change->physical);
-            break;
-        }
-        case DVDNAV_HIGHLIGHT: {
-            dvdnav_highlight_event_t *highlight_event = (dvdnav_highlight_event_t *)buf;
-            qDebug("DVDNAV_HIGHLIGHT\n");
-            qDebug("\tSelected button %d\n", highlight_event->buttonN);
-            break;
-        }
-        case DVDNAV_HOP_CHANNEL:
-            qDebug("DVDNAV_HOP_CHANNEL\n");
-            break;
-        case DVDNAV_STILL_FRAME: {
-            pci_t *pci;
-            dvdnav_still_event_t *still_event = (dvdnav_still_event_t *)buf;
-            qDebug("DVDNAV_STILL_FRAME\n");
-            if (still_event->length < 0xff)
-                qDebug("\tSkipping %d seconds of still frame\n", still_event->length);
-            else
-                qDebug("\tSkipping indefinite length still frame\n");
-            pci = dvdnav_get_current_nav_pci(priv->dvdnav);
-            dvdnav_button_activate(priv->dvdnav, pci);
-            dvdnav_still_skip(priv->dvdnav);
-            break;
-        }
+        case DVDNAV_BLOCK_OK:
+            return len;
         case DVDNAV_WAIT: {
-            qDebug("DVDNAV_WAIT\n");
+            qDebug("DVDNAV_WAIT");
             dvdnav_wait_skip(priv->dvdnav);
             break;
         }
-        case DVDNAV_STOP:
-            qDebug("DVDNAV_STOP\n");
-            stopped = true;
+        case DVDNAV_VTS_CHANGE: {
+            int tit = 0, part = 0;
+            current_cell = 0;
+            dvdnav_vts_change_event_t *vts_event = (dvdnav_vts_change_event_t *)buf;
+            qDebug("DVDNAV, switched to title: %d\r\n", vts_event->new_vtsN);
+            s->end_pos = 0;
+            update_title_len(s);
+            if (dvdnav_current_title_info(priv->dvdnav, &tit, &part) == DVDNAV_STATUS_OK) {
+                qDebug("DVDNAV, NEW TITLE %d.", tit);
+                if (started && current_title > 0 && tit != current_title) {
+                    stopped = true;
+                    return 0;
+                }
+                /*Fix bug, some iso's title switch to 0 2018-05-31*/
+                if (tit == 0) {
+                    dvdnav_title_play(priv->dvdnav, current_title);
+                }
+            }
+            break;
+        }
+        case DVDNAV_CELL_CHANGE: {
+            dvdnav_cell_change_event_t *ev = (dvdnav_cell_change_event_t*)buf;
+            uint32_t nextstill;
+            if (ev->pgc_length)
+                priv->duration = ev->pgc_length / 90;
+
+            if (dvdnav_is_domain_vts(priv->dvdnav)) {
+                qDebug("DVDNAV_TITLE_IS_MOVIE\n");
+            }
+            else {
+                qDebug("DVDNAV_TITLE_IS_MENU\n");
+            }
+            nextstill = dvdnav_get_next_still_flag(priv->dvdnav);
+            if (nextstill) {
+                priv->duration = dvdnav_get_duration(nextstill);
+                priv->still_length = nextstill;
+                if (priv->still_length <= 1) {
+                    pci_t *pnavpci = dvdnav_get_current_nav_pci(priv->dvdnav);
+                    priv->duration = dvdtimetomsec(&pnavpci->pci_gi.e_eltm);
+                }
+            }
+            return len;
+            break;
+        }
+        case DVDNAV_AUDIO_STREAM_CHANGE:
+            qDebug("DVDNAV_AUDIO_STREAM_CHANGE\n");
+            break;
+        case DVDNAV_SPU_STREAM_CHANGE:
+            qDebug("DVDNAV_SPU_STREAM_CHANGE\n");
             break;
         }
     }
-    return -1;
+    return len;
+}
+
+bool DVDNavIOPrivate::stream_dvdnav_seek(stream_t *s, int64_t newpos)
+{
+    uint32_t sector = 0;
+
+    if (s->end_pos && newpos > s->end_pos)
+        newpos = s->end_pos;
+    sector = newpos / 2048ULL;
+    if (dvdnav_sector_search(priv->dvdnav, (uint64_t)sector, SEEK_SET) != DVDNAV_STATUS_OK)
+        return false;
+    s->pos = newpos;
+    return true;
 }
 
 int DVDNavIOPrivate::dvdnav_first_play()
@@ -1177,7 +662,6 @@ static int utf8_to_mb(char* str_utf8, char* local_buf, size_t len) {
 
 int DVDNavIOPrivate::stream_dvdnav_open(const char *file)
 {
-    struct stream_nav_priv_s* p = NULL;
     dvdnav_status_t status = DVDNAV_STATUS_ERR;
     const char *titleName;
     int titles = 0;
@@ -1234,9 +718,8 @@ int DVDNavIOPrivate::stream_dvdnav_open(const char *file)
     if (!dvdnav_first_play()) {
         return STREAM_UNSUPPORTED;
     }
+    stopped = false;
 
-    if(current_title > 0)
-        show_audio_subs_languages(priv->dvdnav);
     if(dvd_angle > 1)
         dvdnav_angle_change(priv->dvdnav, dvd_angle);
 
@@ -1244,21 +727,19 @@ int DVDNavIOPrivate::stream_dvdnav_open(const char *file)
     dvd_stream->flags = STREAM_READ;
     dvd_stream->type = STREAMTYPE_DVDNAV;
 
-    {
-        char buf[STREAM_BUFFER_SIZE];
-        int ret = 0;
-        while (dvd_stream->end_pos == 0) {
-            ret = stream_dvdnav_read(dvd_stream, buf, STREAM_BUFFER_SIZE);
-            if (ret <= 0) {
-                /*Prevent forever loops if the DVD file is invalid.*/
-                break;
-            }
-        }
-        if (!dvdnav_first_play()) {
-            return STREAM_UNSUPPORTED;
+    char buf[STREAM_BUFFER_SIZE];
+    int ret = 0;
+    while (dvd_stream->end_pos == 0) {
+        ret = stream_dvdnav_read(dvd_stream, buf, STREAM_BUFFER_SIZE);
+        if (ret <= 0) {
+            /*Prevent forever loops if the DVD file is invalid.*/
+            break;
         }
     }
-    //stream_dvdnav_seek(dvd_stream, dvd_stream->start_pos);
+    if (!dvdnav_first_play()) {
+        return STREAM_UNSUPPORTED;
+    }
+
     if(!dvd_stream->pos && current_title > 0)
         qDebug() << "INIT ERROR: couldn't get init pos %s\r\n" << dvdnav_err_to_string(priv->dvdnav);
     stream_dvdnav_get_time();
@@ -1274,7 +755,7 @@ void DVDNavIOPrivate::stream_dvdnav_close()
     }
     if (priv) {
         priv->duration = 0;
-        priv->state |= NAV_FLAG_EOF;
+        stopped = true;
         if (priv->dvdnav) dvdnav_close(priv->dvdnav);
         delete priv;
         priv = NULL;
@@ -1291,7 +772,7 @@ void DVDNavIOPrivate::stream_dvdnav_close()
 void DVDNavIOPrivate::stream_dvdnav_get_time()
 {
     uint64_t *parts = NULL, duration = 0;
-    uint32_t n, i;
+    uint32_t n;
     qint64 title_duration;
 
     n = dvdnav_describe_title_chapters(priv->dvdnav, current_title, &parts, &duration);
