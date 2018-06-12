@@ -715,7 +715,7 @@ int DVDNavIOPrivate::stream_dvdnav_open(const char *file)
         current_title = 0;
     }
 
-    if (!dvdnav_first_play()) {
+    if (dvdnav_first_play() != STREAM_OK) {
         return STREAM_UNSUPPORTED;
     }
     stopped = false;
